@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Arrow = { startX: number; startY: number; endX: number; endY: number };
+type Arrow = { startX: number; startY: number; endX: number; endY: number; normalized?: boolean };
 
 interface ImageAnnotatorProps {
   imageUrl: string;
@@ -11,16 +11,19 @@ interface ImageAnnotatorProps {
   onSave: (imageDataUrl: string, arrows: Arrow[]) => void;
 }
 
-function drawArrow(ctx: CanvasRenderingContext2D, arrow: Arrow, scale = 1) {
-  const startX = arrow.startX * scale;
-  const startY = arrow.startY * scale;
-  const endX = arrow.endX * scale;
-  const endY = arrow.endY * scale;
+function drawArrow(ctx: CanvasRenderingContext2D, arrow: Arrow, width: number, height: number, sourceWidth = width, sourceHeight = height) {
+  const scaleX = arrow.normalized ? width : width / sourceWidth;
+  const scaleY = arrow.normalized ? height : height / sourceHeight;
+  const startX = arrow.startX * scaleX;
+  const startY = arrow.startY * scaleY;
+  const endX = arrow.endX * scaleX;
+  const endY = arrow.endY * scaleY;
   const angle = Math.atan2(endY - startY, endX - startX);
-  const headLength = 16 * scale;
+  const visualScale = width / sourceWidth;
+  const headLength = 16 * visualScale;
 
   ctx.strokeStyle = "#e04444";
-  ctx.lineWidth = Math.max(3 * scale, 2);
+  ctx.lineWidth = Math.max(3 * visualScale, 2);
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(startX, startY);
@@ -47,8 +50,8 @@ export function ImageAnnotator({ imageUrl, existingArrows = [], onClose, onSave 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    arrows.forEach(arrow => drawArrow(ctx, arrow));
-    if (currentArrow) drawArrow(ctx, currentArrow);
+    arrows.forEach(arrow => drawArrow(ctx, arrow, canvas.width, canvas.height));
+    if (currentArrow) drawArrow(ctx, currentArrow, canvas.width, canvas.height);
   };
 
   const sizeCanvas = () => {
@@ -68,7 +71,7 @@ export function ImageAnnotator({ imageUrl, existingArrows = [], onClose, onSave 
 
   const coordinates = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    return { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
   };
 
   const finishDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -76,7 +79,7 @@ export function ImageAnnotator({ imageUrl, existingArrows = [], onClose, onSave 
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     const dx = currentArrow.endX - currentArrow.startX;
     const dy = currentArrow.endY - currentArrow.startY;
-    if (Math.hypot(dx, dy) > 10) setArrows(previous => [...previous, currentArrow]);
+    if (Math.hypot(dx * event.currentTarget.clientWidth, dy * event.currentTarget.clientHeight) > 10) setArrows(previous => [...previous, currentArrow]);
     setDrawing(false);
     setCurrentArrow(null);
   };
@@ -90,9 +93,17 @@ export function ImageAnnotator({ imageUrl, existingArrows = [], onClose, onSave 
     const ctx = output.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(image, 0, 0, output.width, output.height);
-    const scale = output.width / (canvasRef.current?.clientWidth || output.width);
-    arrows.forEach(arrow => drawArrow(ctx, arrow, scale));
-    onSave(output.toDataURL("image/jpeg", 0.92), arrows);
+    const sourceWidth = canvasRef.current?.clientWidth || output.width;
+    const sourceHeight = canvasRef.current?.clientHeight || output.height;
+    arrows.forEach(arrow => drawArrow(ctx, arrow, output.width, output.height, sourceWidth, sourceHeight));
+    const normalizedArrows = arrows.map(arrow => arrow.normalized ? arrow : {
+      startX: arrow.startX / sourceWidth,
+      startY: arrow.startY / sourceHeight,
+      endX: arrow.endX / sourceWidth,
+      endY: arrow.endY / sourceHeight,
+      normalized: true,
+    });
+    onSave(output.toDataURL("image/jpeg", 0.92), normalizedArrows);
     onClose();
   };
 
@@ -101,7 +112,7 @@ export function ImageAnnotator({ imageUrl, existingArrows = [], onClose, onSave 
       <div className="annotator-header"><h3>کشیدن فلش روی تصویر</h3><button type="button" onClick={onClose} aria-label="بستن">×</button></div>
       <div className="annotator-canvas-container">
         <img ref={imageRef} src={imageUrl} alt="تصویر برای علامت‌گذاری" onLoad={sizeCanvas}/>
-        <canvas ref={canvasRef} onPointerDown={event => { const point = coordinates(event); event.currentTarget.setPointerCapture(event.pointerId); setDrawing(true); setCurrentArrow({ startX: point.x, startY: point.y, endX: point.x, endY: point.y }); }} onPointerMove={event => { if (!drawing) return; const point = coordinates(event); setCurrentArrow(previous => previous ? { ...previous, endX: point.x, endY: point.y } : null); }} onPointerUp={finishDrawing} onPointerCancel={finishDrawing}/>
+        <canvas ref={canvasRef} onPointerDown={event => { const point = coordinates(event); event.currentTarget.setPointerCapture(event.pointerId); setDrawing(true); setCurrentArrow({ startX: point.x, startY: point.y, endX: point.x, endY: point.y, normalized: true }); }} onPointerMove={event => { if (!drawing) return; const point = coordinates(event); setCurrentArrow(previous => previous ? { ...previous, endX: point.x, endY: point.y } : null); }} onPointerUp={finishDrawing} onPointerCancel={finishDrawing}/>
       </div>
       {arrows.length > 0 && <div className="arrow-list"><strong>فلش‌های تصویر</strong>{arrows.map((_, index) => <div key={index}><span>فلش {index + 1}</span><button type="button" onClick={() => setArrows(previous => previous.filter((_, itemIndex) => itemIndex !== index))} aria-label={`حذف فلش ${index + 1}`} title="حذف این فلش"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 16H6L5 6M10 11v6M14 11v6"/></svg></button></div>)}</div>}
       <div className="annotator-toolbar"><button type="button" className="secondary" onClick={() => setArrows(previous => previous.slice(0, -1))} disabled={!arrows.length}>بازگشت</button><button type="button" className="secondary" onClick={() => setArrows([])} disabled={!arrows.length}>حذف همه</button><button type="button" className="primary" onClick={save}>ذخیره تصویر نهایی</button></div>

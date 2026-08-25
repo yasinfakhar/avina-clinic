@@ -8,14 +8,14 @@ const vazirmatn = Vazirmatn({
 });
 
 export const metadata: Metadata = {
-  title: "آوا | سامانه مدیریت شنوایی‌سنجی",
+  title: "آوینا | سامانه مدیریت شنوایی‌سنجی",
   description: "مدیریت پرونده‌ها و تشخیص‌های شنوایی‌سنجی",
   other: {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/avina-logo-transparent.png",
+    shortcut: "/avina-logo-transparent.png",
   },
 };
 
