@@ -17,20 +17,21 @@ type SpeechAudiometry = { srt: string; mcl: string; ucl: string };
 type RinneResult = "" | "positive" | "negative";
 type WeberResult = "" | "left" | "right" | "both";
 type AudiometricTests = { rinne: Record<"right" | "left", RinneResult>; weber: Record<string, WeberResult>; dearDoctor: string; comments: Record<"right" | "left", string> };
+type Gender = "" | "male" | "female";
 type Ear = { result: string; imageName: string; imageDataUrl?: string; originalImageDataUrl?: string; arrows?: Arrow[]; tympanometry?: Tympanometry; audiometry?: Audiometry; speechAudiometry?: SpeechAudiometry };
 type RecordItem = {
-  id: string; doctorName: string; fullName: string; nationalId: string;
+  id: string; doctorName: string; fullName: string; nationalId: string; gender: Gender;
   birthDate: string; right: Ear; left: Ear; audiometricTests?: AudiometricTests; status: "draft" | "completed"; updatedAt: string;
 };
 
 const seed: RecordItem[] = [
-  { id: "A-1405-021", doctorName: "دکتر سمیرا محمدی جوزدانی", fullName: "سارا احمدی", nationalId: "۰۰۱۲۳۴۵۶۷۸", birthDate: "۱۳۷۲/۰۸/۱۴", right: { result: "Normal TM", imageName: "right-ear.jpg" }, left: { result: "Normal TM", imageName: "left-ear.jpg" }, status: "completed", updatedAt: "امروز، ۱۰:۳۵" },
-  { id: "A-1405-020", doctorName: "دکتر سمیرا محمدی جوزدانی", fullName: "محمد رضایی", nationalId: "۰۴۵۶۷۸۹۱۲۳", birthDate: "۱۳۶۵/۰۲/۲۹", right: { result: "O4", imageName: "" }, left: { result: "", imageName: "" }, status: "draft", updatedAt: "دیروز، ۱۶:۲۰" },
-  { id: "A-1405-019", doctorName: "دکتر سمیرا محمدی جوزدانی", fullName: "مریم کریمی", nationalId: "۲۲۸۹۱۲۳۴۵۶", birthDate: "۱۳۸۰/۱۱/۰۵", right: { result: "Normal TM", imageName: "" }, left: { result: "Normal TM", imageName: "" }, status: "completed", updatedAt: "۲ مرداد ۱۴۰۵" },
+  { id: "A-1405-021", doctorName: "دکتر سمیرا محمدی جوزدانی", fullName: "سارا احمدی", nationalId: "۰۰۱۲۳۴۵۶۷۸", gender: "female", birthDate: "۱۳۷۲/۰۸/۱۴", right: { result: "Normal TM", imageName: "right-ear.jpg" }, left: { result: "Normal TM", imageName: "left-ear.jpg" }, status: "completed", updatedAt: "امروز، ۱۰:۳۵" },
+  { id: "A-1405-020", doctorName: "دکتر سمیرا محمدی جوزدانی", fullName: "محمد رضایی", nationalId: "۰۴۵۶۷۸۹۱۲۳", gender: "male", birthDate: "۱۳۶۵/۰۲/۲۹", right: { result: "O4", imageName: "" }, left: { result: "", imageName: "" }, status: "draft", updatedAt: "دیروز، ۱۶:۲۰" },
+  { id: "A-1405-019", doctorName: "دکتر سمیرا محمدی جوزدانی", fullName: "مریم کریمی", nationalId: "۲۲۸۹۱۲۳۴۵۶", gender: "female", birthDate: "۱۳۸۰/۱۱/۰۵", right: { result: "Normal TM", imageName: "" }, left: { result: "Normal TM", imageName: "" }, status: "completed", updatedAt: "۲ مرداد ۱۴۰۵" },
 ];
 
 const emptyRecord = (): RecordItem => ({
-  id: `A-${Date.now().toString().slice(-6)}`, doctorName: "", fullName: "", nationalId: "",
+  id: `A-${Date.now().toString().slice(-6)}`, doctorName: "", fullName: "", nationalId: "", gender: "",
   birthDate: "", right: { result: "", imageName: "", imageDataUrl: "", originalImageDataUrl: "", arrows: [] }, left: { result: "", imageName: "", imageDataUrl: "", originalImageDataUrl: "", arrows: [] },
   audiometricTests: emptyAudiometricTests(), status: "draft", updatedAt: "همین حالا",
 });
@@ -57,6 +58,32 @@ const normalizeAudiometricTests = (value?: AudiometricTests): AudiometricTests =
 const AUDIOMETRY_MIN = -10;
 const AUDIOMETRY_MAX = 120;
 const AUDIOMETRY_STEP = 5;
+
+function tehranTodayJalali() {
+  const parts = new Intl.DateTimeFormat("en-US-u-ca-persian", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date());
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  return { jy: get("year"), jm: get("month"), jd: get("day") };
+}
+
+function calculateAge(birthDate: string) {
+  const toEnglishDigits = (value: string) => value.replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
+  const parts = toEnglishDigits(birthDate.trim()).split("/");
+  if (parts.length !== 3 || parts.some((part) => !part)) return "";
+  const [jy, jm, jd] = parts.map(Number);
+  if (![jy, jm, jd].every(Number.isFinite)) return "";
+  const today = tehranTodayJalali();
+  const age = today.jy - jy - (today.jm < jm || (today.jm === jm && today.jd < jd) ? 1 : 0);
+  return age >= 0 ? String(age) : "";
+}
+
+function genderLabel(gender: Gender) {
+  return gender === "male" ? "Male" : gender === "female" ? "Female" : "";
+}
 
 function isValidAudiometryThreshold(value: string) {
   if (value.trim() === "") return true;
@@ -138,7 +165,7 @@ export default function Home() {
     const saved = localStorage.getItem("audiology-records");
     if (saved) {
       const parsed = JSON.parse(saved) as Array<RecordItem & { fileName?: string }>;
-      startTransition(() => setRecords(parsed.map(({ fileName, ...record }) => ({ ...record, doctorName: record.doctorName || fileName || "" }))));
+      startTransition(() => setRecords(parsed.map(({ fileName, ...record }) => ({ ...record, doctorName: record.doctorName || fileName || "", gender: record.gender || "" }))));
     }
     setLoggedIn(sessionStorage.getItem("audiology-login") === "yes");
   }, []);
@@ -223,7 +250,7 @@ function Wizard({ step, setStep, record, setRecord, onBack, onSave, notify }: { 
     updateEar(to, { audiometry: copyAudiometry(record[from].audiometry) });
     notify(`اطلاعات ادیومتری گوش ${from === "right" ? "راست" : "چپ"} به گوش ${to === "right" ? "راست" : "چپ"} کپی شد`);
   };
-  const canNext = step !== 1 || (record.doctorName && record.fullName && record.nationalId && record.birthDate);
+  const canNext = step !== 1 || (record.doctorName && record.fullName && record.nationalId && record.birthDate && record.gender);
   const handleImageUpload = (side: "right" | "left", file: File | null) => {
     if (!file) return;
     const reader = new FileReader();
@@ -283,27 +310,37 @@ function Wizard({ step, setStep, record, setRecord, onBack, onSave, notify }: { 
               <div className="form-grid">
                 <label>
                   <span>
-                    نام و نام خانوادگی <b>*</b>
+                    Full Name <b>*</b>
                   </span>
                   <input value={record.fullName} onChange={(e) => update("fullName", e.target.value)} placeholder="نام کامل بیمار" />
                 </label>
                 <label>
                   <span>
-                    نام پزشک معالج <b>*</b>
+                    Referred Doctor <b>*</b>
                   </span>
                   <input value={record.doctorName} onChange={(e) => update("doctorName", e.target.value)} placeholder="نام پزشک معالج" />
                 </label>
                 <label>
                   <span>
-                    کد ملی <b>*</b>
+                    National ID <b>*</b>
                   </span>
                   <input className="ltr" value={record.nationalId} onChange={(e) => update("nationalId", e.target.value)} placeholder="۱۰ رقم" />
                 </label>
                 <label>
                   <span>
-                    تاریخ تولد <b>*</b>
+                    Birth Date <b>*</b>
                   </span>
                   <BirthDatePicker value={record.birthDate} onChange={(v) => update("birthDate", v)} placeholder="۱۳۷۰/۰۱/۰۱" />
+                </label>
+                <label>
+                  <span>
+                    Gender <b>*</b>
+                  </span>
+                  <select value={record.gender} onChange={(e) => update("gender", e.target.value as Gender)}>
+                    <option value="">Select gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
                 </label>
               </div>
             </>
@@ -477,20 +514,24 @@ function Wizard({ step, setStep, record, setRecord, onBack, onSave, notify }: { 
                 <h3>مشخصات بیمار</h3>
                 <dl>
                   <div>
-                    <dt>نام بیمار</dt>
+                    <dt>Full Name</dt>
                     <dd>{record.fullName || "—"}</dd>
                   </div>
                   <div>
-                    <dt>نام پزشک معالج</dt>
+                    <dt>Referred Doctor</dt>
                     <dd>{record.doctorName || "—"}</dd>
                   </div>
                   <div>
-                    <dt>کد ملی</dt>
+                    <dt>National ID</dt>
                     <dd>{record.nationalId || "—"}</dd>
                   </div>
                   <div>
-                    <dt>تاریخ تولد</dt>
-                    <dd>{record.birthDate || "—"}</dd>
+                    <dt>Gender</dt>
+                    <dd>{genderLabel(record.gender) || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Age</dt>
+                    <dd>{calculateAge(record.birthDate) || "—"}</dd>
                   </div>
                 </dl>
                 <h3>نتیجه اتوسکوپی</h3>
@@ -591,6 +632,14 @@ function hasText(value?: string) {
 }
 
 function ReportPage({ icon, title, record, children }: { icon: string; title: string; record: RecordItem; children: React.ReactNode }) {
+  const patientFields: Array<[string, string]> = [
+    ["Full Name", record.fullName],
+    ["National ID", record.nationalId],
+    ["Gender", genderLabel(record.gender)],
+    ["Age", calculateAge(record.birthDate)],
+    ["Referred Doctor", record.doctorName],
+  ];
+
   return (
     <section className="print-page">
       <header className="print-header">
@@ -601,11 +650,16 @@ function ReportPage({ icon, title, record, children }: { icon: string; title: st
             <small>گزارش جامع ارزیابی شنوایی</small>
           </div>
         </div>
-        <div className="print-case">
-          <small>شماره پرونده</small>
-          <strong dir="ltr">{record.id}</strong>
-        </div>
       </header>
+      {patientFields.some(([, value]) => hasText(value)) && (
+            <div className="print-patient-line" dir="ltr" aria-label="Patient Information">
+          {patientFields.filter(([, value]) => hasText(value)).map(([label, value]) => (
+            <span key={label}>
+              <strong>{label}:</strong> <b dir="auto">{value}</b>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="print-title">
         <span>
           <Icon name={icon} />
@@ -747,12 +801,6 @@ function PrintComments({ dearDoctor, comments, title }: { dearDoctor?: string; c
 function PrintReport({ record }: { record: RecordItem }) {
   const sides = ["left", "right"] as const;
   const tests = normalizeAudiometricTests(record.audiometricTests);
-  const patientFields: Array<[string, string]> = [
-    ["نام و نام خانوادگی", record.fullName],
-    ["نام پزشک معالج", record.doctorName],
-    ["کد ملی", record.nationalId],
-    ["تاریخ تولد", record.birthDate],
-  ];
   const tympanometryDoctor = record.right.tympanometry?.dearDoctor || record.left.tympanometry?.dearDoctor;
   const hasOtoscopy = (side: "right" | "left") => hasText(record[side].result) || hasText(record[side].imageName) || hasText(record[side].imageDataUrl);
   const hasTympanometry = (side: "right" | "left") => {
@@ -770,12 +818,6 @@ function PrintReport({ record }: { record: RecordItem }) {
 
   return (
     <div className="print-report">
-      {patientFields.some(([, value]) => hasText(value)) && (
-        <ReportPage icon="users" title="اطلاعات بیمار" record={record}>
-          <ReportFields fields={patientFields} />
-        </ReportPage>
-      )}
-
       {sides.some(hasOtoscopy) && (
         <ReportPage icon="ear" title="Otoscopy" record={record}>
           <div className="print-ear-grid">
@@ -895,22 +937,26 @@ function RecordSummary({ record }: { record: RecordItem }) {
         </header>
         <dl className="summary-details">
           <div>
-            <dt>نام بیمار</dt>
+            <dt>Full Name</dt>
             <dd dir="auto">{valueOrDash(record.fullName)}</dd>
           </div>
           <div>
-            <dt>نام پزشک معالج</dt>
+            <dt>Referred Doctor</dt>
             <dd dir="auto">{valueOrDash(record.doctorName)}</dd>
           </div>
           <div>
-            <dt>کد ملی</dt>
+            <dt>National ID</dt>
             <dd className="national-id" dir="ltr">
               {valueOrDash(record.nationalId)}
             </dd>
           </div>
           <div>
-            <dt>تاریخ تولد</dt>
-            <dd>{valueOrDash(record.birthDate)}</dd>
+            <dt>Gender</dt>
+            <dd>{valueOrDash(genderLabel(record.gender))}</dd>
+          </div>
+          <div>
+            <dt>Age</dt>
+            <dd>{valueOrDash(calculateAge(record.birthDate))}</dd>
           </div>
         </dl>
       </section>
