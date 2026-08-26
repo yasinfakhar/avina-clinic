@@ -643,13 +643,7 @@ function ReportPage({ icon, title, record, children, className = "" }: { icon: s
   return (
     <section className={`print-page ${className}`}>
       <header className="print-header">
-        <div className="print-brand">
-          <img src="/avina-logo-transparent.png" alt="لوگوی آوینا" />
-          <div>
-            <strong>کلینیک شنوایی آوینا</strong>
-            <small>گزارش جامع ارزیابی شنوایی</small>
-          </div>
-        </div>
+        <img className="print-letterhead" src="/header.jpg" alt="سربرگ کلینیک شنوایی آوینا" />
       </header>
       {patientFields.some(([, value]) => hasText(value)) && (
             <div className="print-patient-line" dir="ltr" aria-label="Patient Information">
@@ -730,39 +724,64 @@ function PrintReflexTable({ value }: { value: Tympanometry }) {
   );
 }
 
-function PrintThresholdTable({ value }: { value: Audiometry }) {
-  const rows = (["ac", "bc"] as const).filter((row) => Object.values(value[row]).some((cell) => hasText(cell.value)));
-  const populated = audiometryFrequencies.filter((frequency) => hasText(value.ac[frequency].value) || hasText(value.bc[frequency].value));
+function PrintSpeechAudiometryTable({ value }: { value: SpeechAudiometry }) {
+  const fields: Array<[string, string, string]> = [
+    ["SRT", value.srt, "dB HL"],
+    ["MCL", value.mcl, "dB HL"],
+    ["UCL", value.ucl, "%"],
+  ];
+  const populated = fields.filter(([, fieldValue]) => hasText(fieldValue));
   if (!populated.length) return null;
   return (
-    <table className="print-data-table threshold-table" dir="ltr">
-      <caption>Hearing Thresholds (dB HL)</caption>
+    <table className="print-data-table speech-audiometry-table" dir="ltr">
       <thead>
         <tr>
-          <th>Path</th>
-          {populated.map((frequency) => (
-            <th key={frequency}>
-              {frequency >= 1000 ? `${frequency / 1000}k` : frequency}
-              <small> Hz</small>
-            </th>
+          {populated.map(([label]) => (
+            <th key={label}>{label}</th>
           ))}
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr key={row}>
-            <th>{row.toUpperCase()}</th>
-            {populated.map((frequency) => {
-              const cell = value[row][frequency];
-              return (
-                <td key={frequency}>
-                  {cell.value}
-                  {cell.value && cell.modifier && <small> {cell.modifier}</small>}
-                </td>
-              );
-            })}
-          </tr>
-        ))}
+        <tr>
+          {populated.map(([label, fieldValue, unit]) => (
+            <td key={label}>
+              {fieldValue}
+              <small> {unit}</small>
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function PrintAudiometricTestsTable({ value }: { value: AudiometricTests }) {
+  const rinneLabel = (result: RinneResult) => (result === "positive" ? "Positive" : result === "negative" ? "Negative" : "");
+  const rinneFields = (["left", "right"] as const)
+    .map((side) => ({ label: `Rinne ${side === "right" ? "RE" : "LE"}`, value: rinneLabel(value.rinne[side]) }))
+    .filter((field) => hasText(field.value));
+  const weberFields = weberFrequencies
+    .map((frequency) => ({ label: `Weber ${frequency} Hz`, value: value.weber[frequency] }))
+    .filter((field) => Boolean(field.value));
+  if (!rinneFields.length && !weberFields.length) return null;
+
+  return (
+    <table className="print-data-table print-audiometric-tests-table" dir="ltr">
+      <thead>
+        <tr>
+          {rinneFields.map((field) => <th key={field.label}>{field.label}</th>)}
+          {weberFields.map((field) => <th key={field.label}>{field.label}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          {rinneFields.map((field) => <td key={field.label}>{field.value}</td>)}
+          {weberFields.map((field) => (
+            <td key={field.label} aria-label={field.value}>
+              <WeberIndicator value={field.value} />
+            </td>
+          ))}
+        </tr>
       </tbody>
     </table>
   );
@@ -813,8 +832,6 @@ function PrintReport({ record }: { record: RecordItem }) {
     return Boolean((value && (["ac", "bc"] as const).some((row) => Object.values(value[row]).some((cell) => hasText(cell.value)))) || (speech && Object.values(speech).some(hasText)));
   };
   const hasAudiometricTests = tests.rinne.right || tests.rinne.left || Object.values(tests.weber).some(Boolean) || hasText(tests.dearDoctor);
-  const rinneLabel = (value: RinneResult) => (value === "positive" ? "Positive" : value === "negative" ? "Negative" : "");
-  const weberLabel = (value: WeberResult) => (value === "left" ? "Left" : value === "right" ? "Right" : value === "both" ? "Both" : "");
 
   return (
     <div className="print-report">
@@ -885,7 +902,7 @@ function PrintReport({ record }: { record: RecordItem }) {
       )}
 
       {(sides.some(hasAudiometry) || hasAudiometricTests || sides.some((side) => hasText(tests.comments[side]))) && (
-        <ReportPage icon="audiometry" title="Audiometry" record={record}>
+        <ReportPage icon="audiometry" title="Audiometry" record={record} className="print-audiometry-page">
           <div className="print-ear-grid">
             {sides.filter(hasAudiometry).map((side) => {
               const audiometry = copyAudiometry(record[side].audiometry);
@@ -897,21 +914,14 @@ function PrintReport({ record }: { record: RecordItem }) {
                     <span>{side === "right" ? "R" : "L"}</span> گوش {side === "right" ? "راست" : "چپ"}
                   </h2>
                   {hasThresholds && <AudiometrySummaryChart side={side} value={audiometry} />}
-                  <PrintThresholdTable value={audiometry} />
-                  <ReportFields
-                    fields={[
-                      ["SRT", speech.srt, "dB HL"],
-                      ["MCL", speech.mcl, "dB HL"],
-                      ["UCL", speech.ucl, "%"],
-                    ]}
-                  />
+                  <PrintSpeechAudiometryTable value={speech} />
                 </article>
               );
             })}
           </div>
           {hasAudiometricTests && (
             <div className="print-tests">
-              <ReportFields fields={[["Rinne LE", rinneLabel(tests.rinne.left)], ["Rinne RE", rinneLabel(tests.rinne.right)], ...weberFrequencies.map((frequency) => [`Weber ${frequency} Hz`, weberLabel(tests.weber[frequency])] as [string, string])]} />
+              <PrintAudiometricTestsTable value={tests} />
             </div>
           )}
           <PrintComments dearDoctor={tests.dearDoctor} comments={tests.comments} title="Audiometry Result" />
