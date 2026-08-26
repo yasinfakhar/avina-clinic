@@ -631,7 +631,7 @@ function hasText(value?: string) {
   );
 }
 
-function ReportPage({ icon, title, record, children }: { icon: string; title: string; record: RecordItem; children: React.ReactNode }) {
+function ReportPage({ icon, title, record, children, className = "" }: { icon: string; title: string; record: RecordItem; children: React.ReactNode; className?: string }) {
   const patientFields: Array<[string, string]> = [
     ["Full Name", record.fullName],
     ["National ID", record.nationalId],
@@ -641,7 +641,7 @@ function ReportPage({ icon, title, record, children }: { icon: string; title: st
   ];
 
   return (
-    <section className="print-page">
+    <section className={`print-page ${className}`}>
       <header className="print-header">
         <div className="print-brand">
           <img src="/avina-logo-transparent.png" alt="لوگوی آوینا" />
@@ -786,7 +786,7 @@ function PrintComments({ dearDoctor, comments, title }: { dearDoctor?: string; c
               <header>
                 <span>{side === "right" ? "R" : "L"}</span>
                 <strong>
-                  {title}، گوش {side === "right" ? "راست" : "چپ"}
+                  {title.replace(/\s+Result$/, "")} {side === "right" ? "RE" : "LE"} Result
                 </strong>
               </header>
               <div dir="auto" dangerouslySetInnerHTML={{ __html: comments[side] }} />
@@ -819,7 +819,7 @@ function PrintReport({ record }: { record: RecordItem }) {
   return (
     <div className="print-report">
       {(sides.some(hasTympanometry) || sides.some(hasOtoscopy) || hasText(tympanometryDoctor) || sides.some((side) => hasText(record[side].tympanometry?.comment))) && (
-        <ReportPage icon="tympanometry" title="Tympanometry" record={record}>
+        <ReportPage icon="tympanometry" title="Tympanometry" record={record} className="print-tympanometry-page">
           {sides.some(hasTympanometry) && (
             <div className="print-ear-grid">
               {sides.filter(hasTympanometry).map((side) => {
@@ -852,7 +852,14 @@ function PrintReport({ record }: { record: RecordItem }) {
           <PrintComments dearDoctor={tympanometryDoctor} comments={{ right: record.right.tympanometry?.comment || "", left: record.left.tympanometry?.comment || "" }} title="Tympanometry Result" />
           {sides.some(hasOtoscopy) && (
             <section className="print-otoscopy-section">
-              <h2>Otoscopy</h2>
+              <div className="print-title print-subtitle">
+                <span>
+                  <Icon name="ear" />
+                </span>
+                <div>
+                  <h2>Otoscopy</h2>
+                </div>
+              </div>
               <div className="print-ear-grid">
                 {sides.filter(hasOtoscopy).map((side) => (
                   <article className={`print-ear ${side}`} key={side}>
