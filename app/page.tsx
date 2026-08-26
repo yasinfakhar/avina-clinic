@@ -117,11 +117,11 @@ function audiometryMarkerAsset(side: "right" | "left", row: "ac" | "bc", modifie
   return side === "right" ? "/audiometry/02_RE_BC_left_bracket.svg" : "/audiometry/04_LE_BC_right_bracket.svg";
 }
 
-function AudiometryMarker({ side, row, modifier, x, y }: { side: "right" | "left"; row: "ac" | "bc"; modifier: AudiometryModifier; x: number; y: number }) {
+function AudiometryMarker({ side, row, modifier, x, y, verticalScale = 1 }: { side: "right" | "left"; row: "ac" | "bc"; modifier: AudiometryModifier; x: number; y: number; verticalScale?: number }) {
   const size = modifier === "MD" ? 58 : 48;
   const frequencyIndex = Math.round((x - 85) / (790 - 85) * (audiometryFrequencies.length - 1));
   const frequency = audiometryFrequencies[frequencyIndex];
-  const threshold = Math.round((y - 34) / (424 - 34) * 130 - 10);
+  const threshold = Math.round((y / verticalScale - 34) / (424 - 34) * 130 - 10);
   const label = `${row.toUpperCase()}، ${frequency} هرتز، ${threshold} دسی‌بل`;
   return <g className="audiometry-marker" role="img" aria-label={label} tabIndex={0}><title>{label}</title><circle cx={x} cy={y} r="11" style={{fill:"transparent",stroke:"none"}}/><image href={audiometryMarkerAsset(side, row, modifier)} x={x - size/2} y={y - size/2} width={size} height={size} aria-hidden="true" preserveAspectRatio="xMidYMid meet" /></g>;
 }
@@ -757,30 +757,31 @@ function PrintSpeechAudiometryTable({ value }: { value: SpeechAudiometry }) {
 
 function PrintAudiometricTestsTable({ value }: { value: AudiometricTests }) {
   const rinneLabel = (result: RinneResult) => (result === "positive" ? "Positive" : result === "negative" ? "Negative" : "");
-  const rinneFields = (["left", "right"] as const)
-    .map((side) => ({ label: `Rinne ${side === "right" ? "RE" : "LE"}`, value: rinneLabel(value.rinne[side]) }))
-    .filter((field) => hasText(field.value));
+  const rinneFields = (["right", "left"] as const)
+    .map((side) => ({ label: `Rinne ${side === "right" ? "RE" : "LE"}`, value: rinneLabel(value.rinne[side]) }));
   const weberFields = weberFrequencies
     .map((frequency) => ({ label: `Weber ${frequency} Hz`, value: value.weber[frequency] }))
     .filter((field) => Boolean(field.value));
-  if (!rinneFields.length && !weberFields.length) return null;
+  if (!rinneFields.some((field) => hasText(field.value)) && !weberFields.length) return null;
 
   return (
     <table className="print-data-table print-audiometric-tests-table" dir="ltr">
       <thead>
         <tr>
-          {rinneFields.map((field) => <th key={field.label}>{field.label}</th>)}
+          {rinneFields.slice(0, 1).map((field) => <th key={field.label}>{field.label}</th>)}
           {weberFields.map((field) => <th key={field.label}>{field.label}</th>)}
+          {rinneFields.slice(1).map((field) => <th key={field.label}>{field.label}</th>)}
         </tr>
       </thead>
       <tbody>
         <tr>
-          {rinneFields.map((field) => <td key={field.label}>{field.value}</td>)}
+          {rinneFields.slice(0, 1).map((field) => <td key={field.label}>{field.value}</td>)}
           {weberFields.map((field) => (
             <td key={field.label} aria-label={field.value}>
               <WeberIndicator value={field.value} />
             </td>
           ))}
+          {rinneFields.slice(1).map((field) => <td key={field.label}>{field.value}</td>)}
         </tr>
       </tbody>
     </table>
@@ -913,7 +914,7 @@ function PrintReport({ record }: { record: RecordItem }) {
                   <h2>
                     <span>{side === "right" ? "R" : "L"}</span> گوش {side === "right" ? "راست" : "چپ"}
                   </h2>
-                  {hasThresholds && <AudiometrySummaryChart side={side} value={audiometry} />}
+                  {hasThresholds && <AudiometrySummaryChart side={side} value={audiometry} print />}
                   <PrintSpeechAudiometryTable value={speech} />
                 </article>
               );
@@ -1203,16 +1204,17 @@ function RecordSummary({ record }: { record: RecordItem }) {
   );
 }
 
-function AudiometrySummaryChart({ side, value }: { side: "right"|"left"; value: Audiometry }) {
+function AudiometrySummaryChart({ side, value, print = false }: { side: "right"|"left"; value: Audiometry; print?: boolean }) {
   const plot={left:85,right:790,top:34,bottom:424};
+  const verticalScale=print?2.5:1;
   const yTicks=Array.from({length:14},(_,index)=>-10+index*10);
   const x=(index:number)=>plot.left+index/(audiometryFrequencies.length-1)*(plot.right-plot.left);
-  const y=(threshold:number)=>plot.top+(threshold+10)/130*(plot.bottom-plot.top);
+  const y=(threshold:number)=>(plot.top+(threshold+10)/130*(plot.bottom-plot.top))*verticalScale;
   const entered=(row:"ac"|"bc")=>audiometryFrequencies.flatMap((frequency,index)=>{if(row==="bc"&&frequency>=6000)return [];const cell=value[row][frequency]||{value:"",modifier:""},counterpartCell=value[row==="bc"?"ac":"bc"][frequency];const threshold=Number(cell.value),counterpart=Number(counterpartCell?.value);const violatesBoneGap=Boolean(counterpartCell?.value.trim())&&Number.isFinite(counterpart)&&(row==="bc"?threshold>counterpart:counterpart>threshold);return cell.value.trim()!==""&&isValidAudiometryThreshold(cell.value)&&!violatesBoneGap?[{frequency,index,threshold,modifier:cell.modifier}]:[];});
   const acPoints=entered("ac"),bcPoints=entered("bc");
   const lineSegments=(points:ReturnType<typeof entered>)=>points.slice(0,-1).map((point,index)=>{const next=points[index+1],dx=x(next.index)-x(point.index),dy=y(next.threshold)-y(point.threshold),distance=Math.hypot(dx,dy),startInset=point.modifier==="MD"?22:18,endInset=next.modifier==="MD"?22:18;return `${x(point.index)+dx/distance*startInset},${y(point.threshold)+dy/distance*startInset} ${x(next.index)-dx/distance*endInset},${y(next.threshold)-dy/distance*endInset}`;});
   const lines=(points:ReturnType<typeof entered>,className:string)=>lineSegments(points).map((segment,index)=><polyline className={className} key={index} points={segment}/>);
-  return <div className={`audiogram summary-audiogram ${side}`} dir="ltr"><svg viewBox="0 0 910 465" role="img" aria-label={`نمودار ادیومتری گوش ${side==="right"?"راست":"چپ"}`}>{yTicks.map(tick=><g key={tick}><line x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)}/><text x="42" y={y(tick)+4}>{tick}</text></g>)}{audiometryFrequencies.map((frequency,index)=><g key={frequency}><line x1={x(index)} x2={x(index)} y1={plot.top} y2={plot.bottom}/><text x={x(index)} y="447">{frequency>=1000?`${frequency/1000}k`:frequency}</text></g>)}<text className="axis-title" x="18" y="22">dB HL</text><text className="axis-title" x="830" y="462">Frequency (Hz)</text>{acPoints.length>1&&lines(acPoints,"ac-line")} {bcPoints.length>1&&lines(bcPoints,"bc-line")} {acPoints.map(point=><g className="ac-point" key={point.frequency}><AudiometryMarker side={side} row="ac" modifier={point.modifier} x={x(point.index)} y={y(point.threshold)}/></g>)}{bcPoints.map(point=><g className="bc-point" key={point.frequency}><AudiometryMarker side={side} row="bc" modifier={point.modifier} x={x(point.index)} y={y(point.threshold)}/></g>)}</svg></div>;
+  return <div className={`audiogram summary-audiogram ${side}`} dir="ltr"><svg viewBox={`0 0 910 ${465*verticalScale}`} role="img" aria-label={`نمودار ادیومتری گوش ${side==="right"?"راست":"چپ"}`}>{yTicks.map(tick=><g key={tick}><line x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)}/><text x="42" y={y(tick)+4}>{tick}</text></g>)}{audiometryFrequencies.map((frequency,index)=><g key={frequency}><line x1={x(index)} x2={x(index)} y1={plot.top*verticalScale} y2={plot.bottom*verticalScale}/><text x={x(index)} y={447*verticalScale}>{frequency>=1000?`${frequency/1000}k`:frequency}</text></g>)}<text className="axis-title" x={print?55:18} y={22*verticalScale}>dB HL</text><text className="axis-title" x={print?700:830} y={462*verticalScale}>Frequency (Hz)</text>{acPoints.length>1&&lines(acPoints,"ac-line")} {bcPoints.length>1&&lines(bcPoints,"bc-line")} {acPoints.map(point=><g className="ac-point" key={point.frequency}><AudiometryMarker side={side} row="ac" modifier={point.modifier} x={x(point.index)} y={y(point.threshold)} verticalScale={verticalScale}/></g>)}{bcPoints.map(point=><g className="bc-point" key={point.frequency}><AudiometryMarker side={side} row="bc" modifier={point.modifier} x={x(point.index)} y={y(point.threshold)} verticalScale={verticalScale}/></g>)}</svg></div>;
 }
 
 function TympanometrySummaryChart({ side, value }: { side: "right"|"left"; value: Tympanometry }) {
