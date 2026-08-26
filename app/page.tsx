@@ -818,55 +818,54 @@ function PrintReport({ record }: { record: RecordItem }) {
 
   return (
     <div className="print-report">
-      {sides.some(hasOtoscopy) && (
-        <ReportPage icon="ear" title="Otoscopy" record={record}>
-          <div className="print-ear-grid">
-            {sides.filter(hasOtoscopy).map((side) => (
-              <article className={`print-ear ${side}`} key={side}>
-                <h2>
-                  <span>{side === "right" ? "R" : "L"}</span> گوش {side === "right" ? "راست" : "چپ"}
-                </h2>
-                {record[side].imageDataUrl && <img className="print-otoscopy-image" src={record[side].imageDataUrl} alt={`تصویر اتوسکوپی گوش ${side === "right" ? "راست" : "چپ"}`} />}
-                <ReportFields
-                  fields={[
-                    ["Otoscopy Result", record[side].result],
-                    // ["نام فایل تصویر", record[side].imageName],
-                  ]}
-                />
-              </article>
-            ))}
-          </div>
-        </ReportPage>
-      )}
-
-      {(sides.some(hasTympanometry) || hasText(tympanometryDoctor) || sides.some((side) => hasText(record[side].tympanometry?.comment))) && (
+      {(sides.some(hasTympanometry) || sides.some(hasOtoscopy) || hasText(tympanometryDoctor) || sides.some((side) => hasText(record[side].tympanometry?.comment))) && (
         <ReportPage icon="tympanometry" title="Tympanometry" record={record}>
-          <div className="print-ear-grid">
-            {sides.filter(hasTympanometry).map((side) => {
-              const saved = record[side].tympanometry;
-              const value = { ...emptyTympanometry(), ...saved, ipsi: { ...emptyReflex(), ...saved?.ipsi }, contra: { ...emptyReflex(), ...saved?.contra } };
-              const showChart = value.points.length > 0 || (hasText(value.middleEarPressure) && hasText(value.staticCompliance));
-              return (
-                <article className={`print-ear ${side}`} key={side}>
-                  <h2>
-                    <span>{side === "right" ? "R" : "L"}</span> گوش {side === "right" ? "راست" : "چپ"}
-                  </h2>
-                  {showChart && <TympanometrySummaryChart side={side} value={value} />}
-                  <ReportFields
-                    fields={[
-                      ["Type", value.type],
-                      ["Canal Volume", value.canalVolume, "cc"],
-                      ["Static Compliance", value.staticCompliance, "cc"],
-                      ["Middle Ear Pressure", value.middleEarPressure, "daPa"],
-                      ["Gradient", value.gradient, "%"],
-                    ]}
-                  />
-                  <PrintReflexTable value={value} />
-                </article>
-              );
-            })}
-          </div>
+          {sides.some(hasTympanometry) && (
+            <div className="print-ear-grid">
+              {sides.filter(hasTympanometry).map((side) => {
+                const saved = record[side].tympanometry;
+                const value = { ...emptyTympanometry(), ...saved, ipsi: { ...emptyReflex(), ...saved?.ipsi }, contra: { ...emptyReflex(), ...saved?.contra } };
+                const showChart = value.points.length > 0 || (hasText(value.middleEarPressure) && hasText(value.staticCompliance));
+                return (
+                  <article className={`print-ear ${side}`} key={side}>
+                    <h2>
+                      <span>{side === "right" ? "R" : "L"}</span> گوش {side === "right" ? "راست" : "چپ"}
+                    </h2>
+                    {showChart && <TympanometrySummaryChart side={side} value={value} />}
+                    <div className="print-tymp-fields">
+                      <ReportFields
+                        fields={[
+                          ["Type", value.type],
+                          ["Canal Volume", value.canalVolume, "cc"],
+                          ["Static Compliance", value.staticCompliance, "cc"],
+                          ["Middle Ear Pressure", value.middleEarPressure, "daPa"],
+                          ["Gradient", value.gradient, "%"],
+                        ]}
+                      />
+                    </div>
+                    <PrintReflexTable value={value} />
+                  </article>
+                );
+              })}
+            </div>
+          )}
           <PrintComments dearDoctor={tympanometryDoctor} comments={{ right: record.right.tympanometry?.comment || "", left: record.left.tympanometry?.comment || "" }} title="Tympanometry Result" />
+          {sides.some(hasOtoscopy) && (
+            <section className="print-otoscopy-section">
+              <h2>Otoscopy</h2>
+              <div className="print-ear-grid">
+                {sides.filter(hasOtoscopy).map((side) => (
+                  <article className={`print-ear ${side}`} key={side}>
+                    <h2>
+                      <span>{side === "right" ? "R" : "L"}</span> گوش {side === "right" ? "راست" : "چپ"}
+                    </h2>
+                    {record[side].imageDataUrl && <img className="print-otoscopy-image" src={record[side].imageDataUrl} alt={`تصویر اتوسکوپی گوش ${side === "right" ? "راست" : "چپ"}`} />}
+                    <ReportFields fields={[["Otoscopy Result", record[side].result]]} />
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
         </ReportPage>
       )}
 
