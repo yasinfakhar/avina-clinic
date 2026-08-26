@@ -867,7 +867,15 @@ function PrintReport({ record }: { record: RecordItem }) {
                       <span>{side === "right" ? "R" : "L"}</span> گوش {side === "right" ? "راست" : "چپ"}
                     </h2>
                     {record[side].imageDataUrl && <img className="print-otoscopy-image" src={record[side].imageDataUrl} alt={`تصویر اتوسکوپی گوش ${side === "right" ? "راست" : "چپ"}`} />}
-                    <ReportFields fields={[["Otoscopy Result", record[side].result]]} />
+                    {hasText(record[side].result) && (
+                      <div className={`print-note print-otoscopy-result ${side}`}>
+                        <header>
+                          <span>{side === "right" ? "R" : "L"}</span>
+                          <strong>Otoscopy {side === "right" ? "RE" : "LE"} Result</strong>
+                        </header>
+                        <div dir="auto">{record[side].result}</div>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
