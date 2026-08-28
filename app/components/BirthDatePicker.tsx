@@ -19,13 +19,11 @@ const fa = (n: number) => n.toLocaleString("fa-IR");
 function jalCal(jy: number) {
   const breaks = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
   const bl = breaks.length;
-  let gy = jy + 621;
-  let leapJ = -14;
+  const gy = jy + 621;
   let jp = breaks[0];
   let jm: number;
-  let jump: number;
+  let jump = 0;
   let leap: number;
-  let n: number;
   let i: number;
 
   if (jy < jp || jy >= breaks[bl - 1]) throw new Error("Invalid Jalali year");
@@ -34,12 +32,9 @@ function jalCal(jy: number) {
     jm = breaks[i];
     jump = jm - jp;
     if (jy < jm) break;
-    leapJ += Math.floor(jump / 33) * 8 + Math.floor((jump % 33) / 4);
     jp = jm;
   }
-  n = jy - jp;
-  leapJ += Math.floor(n / 33) * 8 + Math.floor(((n % 33) + 3) / 4);
-  if ((jump % 33) === 4 && jump - n === 4) leapJ += 1;
+  const n = jy - jp;
   leap = Math.floor(((gy % 4) + 2) % 4);
   if (leap === 0 && n === 0 && (jump % 33) === 4) leap = -1;
   return { leap, gy };
@@ -78,7 +73,7 @@ function g2d(gy: number, gm: number, gd: number) {
 }
 
 function d2g(jdn: number) {
-  let j = 4 * jdn + 139361631 + Math.floor(Math.floor((4 * jdn + 183187720) / 146097) * 3 / 4) * 4 - 3908;
+  const j = 4 * jdn + 139361631 + Math.floor(Math.floor((4 * jdn + 183187720) / 146097) * 3 / 4) * 4 - 3908;
   const i = Math.floor(((j % 1461) / 4)) * 5 + 308;
   const gd = (i % 153) + 1;
   const gm = Math.floor(i / 153) % 12 + 1;
@@ -126,10 +121,6 @@ export function BirthDatePicker({ value, onChange, placeholder = "۱۳۷۰/۰۱/
   const [open, setOpen] = useState(false);
   const selected = useMemo(() => parseJalali(value), [value]);
   const [view, setView] = useState(() => selected ?? todayJalali());
-
-  useEffect(() => {
-    if (open) setView(selected ?? todayJalali());
-  }, [open, selected]);
 
   useEffect(() => {
     if (!open) return;
@@ -181,7 +172,10 @@ export function BirthDatePicker({ value, onChange, placeholder = "۱۳۷۰/۰۱/
         className={`birth-datepicker-trigger${value ? " has-value" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (!open) setView(selected ?? todayJalali());
+          setOpen((current) => !current);
+        }}
       >
         <span>{value || placeholder}</span>
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

@@ -6,63 +6,23 @@ interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  storageKey: string;
   suggestions?: string[];
 }
 
-/**
- * Autocomplete input component with localStorage history
- * Stores previously entered values and provides suggestions
- */
 export function AutocompleteInput({
   value,
   onChange,
   placeholder = "تایپ کنید...",
-  storageKey,
   suggestions = [],
 }: AutocompleteInputProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [history, setHistory] = useState<string[]>([]);
-  const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load history from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        setHistory(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse history:", e);
-      }
-    }
-  }, [storageKey]);
-
-  // Save to history when value is submitted (on blur or Enter)
-  const saveToHistory = (newValue: string) => {
-    if (!newValue.trim()) return;
-    
-    setHistory(prev => {
-      const filtered = prev.filter(item => item !== newValue);
-      const updated = [newValue, ...filtered].slice(0, 50); // Keep last 50 entries
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  // Filter suggestions based on input
-  useEffect(() => {
-    if (!value) {
-      setFilteredSuggestions([...new Set([...history, ...suggestions])]);
-    } else {
-      const lowerValue = value.toLowerCase();
-      const matched = [...new Set([...history, ...suggestions])].filter(
-        item => item.toLowerCase().includes(lowerValue)
-      );
-      setFilteredSuggestions(matched);
-    }
-  }, [value, history, suggestions]);
+  const uniqueSuggestions = [...new Set(suggestions)];
+  const filteredSuggestions = value
+    ? uniqueSuggestions.filter((item) => item.toLowerCase().includes(value.toLowerCase()))
+    : uniqueSuggestions;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -84,12 +44,10 @@ export function AutocompleteInput({
   const handleSelect = (selectedValue: string) => {
     onChange(selectedValue);
     setIsOpen(false);
-    saveToHistory(selectedValue);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      saveToHistory(value);
       setIsOpen(false);
     } else if (e.key === "Escape") {
       setIsOpen(false);
@@ -99,7 +57,6 @@ export function AutocompleteInput({
   const handleBlur = () => {
     // Delay to allow click on suggestion
     setTimeout(() => {
-      saveToHistory(value);
       setIsOpen(false);
     }, 200);
   };
@@ -153,9 +110,6 @@ export function AutocompleteInput({
                 padding: "8px 12px",
                 cursor: "pointer",
                 borderBottom: index < filteredSuggestions.length - 1 ? "1px solid #f3f4f6" : "none",
-                "&:hover": {
-                  backgroundColor: "#f9fafb",
-                },
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = "#f9fafb";

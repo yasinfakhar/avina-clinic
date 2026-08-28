@@ -1,4 +1,3 @@
-// Intentionally empty by default.
-// Add Drizzle tables here when the site actually needs a database.
-// See examples/d1/db/schema.ts for an opt-in example.
+// The local SQLite schema is initialized in db/index.ts so a new installation
+// only needs the writable data directory and does not require a migration step.
 export {};
