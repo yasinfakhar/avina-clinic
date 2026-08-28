@@ -30,6 +30,9 @@ const seed: RecordItem[] = [
   { id: "A-1405-019", doctorName: "دکتر سمیرا محمدی جوزدانی", fullName: "مریم کریمی", nationalId: "۲۲۸۹۱۲۳۴۵۶", gender: "female", birthDate: "۱۳۸۰/۱۱/۰۵", right: { result: "Normal TM", imageName: "" }, left: { result: "Normal TM", imageName: "" }, status: "completed", updatedAt: "۲ مرداد ۱۴۰۵" },
 ];
 
+const LOGIN_SESSION_KEY = "audiology-login";
+const LOGIN_SESSION_VALUE = "admin-only-v1";
+
 const emptyRecord = (): RecordItem => ({
   id: `A-${Date.now().toString().slice(-6)}`, doctorName: "", fullName: "", nationalId: "", gender: "",
   birthDate: "", right: { result: "", imageName: "", imageDataUrl: "", originalImageDataUrl: "", arrows: [] }, left: { result: "", imageName: "", imageDataUrl: "", originalImageDataUrl: "", arrows: [] },
@@ -167,7 +170,7 @@ export default function Home() {
       const parsed = JSON.parse(saved) as Array<RecordItem & { fileName?: string }>;
       startTransition(() => setRecords(parsed.map(({ fileName, ...record }) => ({ ...record, doctorName: record.doctorName || fileName || "", gender: record.gender || "" }))));
     }
-    setLoggedIn(sessionStorage.getItem("audiology-login") === "yes");
+    startTransition(() => setLoggedIn(sessionStorage.getItem(LOGIN_SESSION_KEY) === LOGIN_SESSION_VALUE));
   }, []);
 
   useEffect(() => {
@@ -196,13 +199,13 @@ export default function Home() {
     localStorage.setItem("audiology-records", JSON.stringify(next)); notify("پرونده حذف شد");
   };
 
-  if (!loggedIn) return <Login onLogin={() => { sessionStorage.setItem("audiology-login", "yes"); setLoggedIn(true); }} />;
+  if (!loggedIn) return <Login onLogin={() => { sessionStorage.setItem(LOGIN_SESSION_KEY, LOGIN_SESSION_VALUE); setLoggedIn(true); }} />;
 
   return (
     <main dir="rtl">
       <header className="topbar">
         <div className="brand"><img className="brand-mark" src="/avina-logo-transparent.png" alt="لوگوی آوینا"/><div><strong>آوینا</strong><small>سامانه مدیریت شنوایی‌سنجی</small></div></div>
-        <div className="profile"><span className="avatar">د</span><div><strong>سمیرا محمدی </strong><small>Audiologist</small></div><button className="logout" onClick={() => { sessionStorage.removeItem("audiology-login"); setLoggedIn(false); }}><Icon name="logout"/></button></div>
+        <div className="profile"><span className="avatar">د</span><div><strong>سمیرا محمدی </strong><small>Audiologist</small></div><button className="logout" onClick={() => { sessionStorage.removeItem(LOGIN_SESSION_KEY); setLoggedIn(false); }}><Icon name="logout"/></button></div>
       </header>
       {view === "dashboard" ? (
         <section className="shell">
@@ -227,7 +230,19 @@ export default function Home() {
 
 function Login({ onLogin }: { onLogin: () => void }) {
   const [show, setShow] = useState(false);
-  return <main className="login-page" dir="rtl"><section className="login-card"><img className="login-logo" src="/avina-logo-transparent.png" alt="لوگوی آوینا"/><h1>ورود به سامانه آوینا</h1><p>مدیریت یکپارچه پرونده‌های شنوایی‌سنجی</p><form onSubmit={e => { e.preventDefault(); onLogin(); }}><label>نام کاربری<input required placeholder="نام کاربری خود را وارد کنید"/></label><label>رمز عبور<div className="password"><input required type={show ? "text" : "password"} placeholder="••••••••"/><button type="button" onClick={() => setShow(!show)}><Icon name="eye"/></button></div></label><div className="login-options"><label><input type="checkbox"/> مرا به خاطر بسپار</label><a href="#">فراموشی رمز عبور</a></div><button className="primary wide">ورود به سامانه</button></form><small>نسخه ۱.۰ · سامانه تخصصی کلینیک شنوایی</small></section></main>;
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (username === "admin" && password === "samisami") {
+      onLogin();
+      return;
+    }
+    setError("نام کاربری یا رمز عبور اشتباه است.");
+  };
+
+  return <main className="login-page" dir="rtl"><section className="login-card"><img className="login-logo" src="/avina-logo-transparent.png" alt="لوگوی آوینا"/><h1>ورود به سامانه آوینا</h1><p>مدیریت یکپارچه پرونده‌های شنوایی‌سنجی</p><form onSubmit={submit}><label>نام کاربری<input required autoComplete="username" value={username} onChange={e => { setUsername(e.target.value); setError(""); }} placeholder="نام کاربری خود را وارد کنید"/></label><label>رمز عبور<div className="password"><input required autoComplete="current-password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} type={show ? "text" : "password"} placeholder="••••••••"/><button type="button" aria-label={show ? "پنهان کردن رمز عبور" : "نمایش رمز عبور"} onClick={() => setShow(!show)}><Icon name="eye"/></button></div></label>{error && <p className="login-error" role="alert">{error}</p>}<div className="login-options"><label><input type="checkbox"/> مرا به خاطر بسپار</label><a href="#">فراموشی رمز عبور</a></div><button className="primary wide">ورود به سامانه</button></form><small>نسخه ۱.۰ · سامانه تخصصی کلینیک شنوایی</small></section></main>;
 }
 
 function Wizard({ step, setStep, record, setRecord, onBack, onSave, notify }: { step: number; setStep: (n: number) => void; record: RecordItem; setRecord: (r: RecordItem) => void; onBack: () => void; onSave: () => void; notify: (s: string) => void }) {
