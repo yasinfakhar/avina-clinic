@@ -871,6 +871,7 @@ export default function Home() {
           notify={notify}
         />
       )}
+      <PrintReport record={current} />
       {toast && <div className="toast">{toast}</div>}
     </main>
   );
@@ -1551,7 +1552,6 @@ function Wizard({
           }}
         />
       )}
-      <PrintReport record={record} />
     </section>
   );
 }
@@ -1594,6 +1594,9 @@ function ReportPage({
           src="/header.jpg"
           alt="سربرگ کلینیک شنوایی آوینا"
         />
+        <span className="print-visit-date" dir="rtl">
+          تاریخ مراجعه: {formatTehranDateTime(currentTimestamp()).split("،")[0]}
+        </span>
       </header>
       {patientFields.some(([, value]) => hasText(value)) && (
         <div
@@ -1818,7 +1821,7 @@ function PrintComments({
 }
 
 function PrintReport({ record }: { record: RecordItem }) {
-  const sides = ["left", "right"] as const;
+  const sides = ["right", "left"] as const;
   const tests = normalizeAudiometricTests(record.audiometricTests);
   const tympanometryDoctor =
     record.right.tympanometry?.dearDoctor ||
@@ -1899,10 +1902,10 @@ function PrintReport({ record }: { record: RecordItem }) {
                       <ReportFields
                         fields={[
                           ["Type", value.type],
-                          ["Canal Volume", value.canalVolume, "cc"],
-                          ["Static Compliance", value.staticCompliance, "cc"],
+                          ["Canal Vol.", value.canalVolume, "cc"],
+                          ["Stat. Comp.", value.staticCompliance, "cc"],
                           [
-                            "Middle Ear Pressure",
+                            "M.E. Press.",
                             value.middleEarPressure,
                             "daPa",
                           ],
