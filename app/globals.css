@@ -120,6 +120,7 @@
 .record-summary .summary-comment-grid .summary-note small,.record-summary .summary-comment-grid .summary-note p,.record-summary .summary-comment-grid .summary-note>div,.record-summary .summary-comment-grid .summary-note>div *{font-size:16px!important}
 .record-summary .summary-comment-grid .summary-note.right small,.record-summary .summary-comment-grid .summary-note.left small{font-size:14px!important}
 @media(max-width:760px){.record-summary .summary-comment-grid{grid-template-columns:1fr;padding:0 12px 12px}}
+.rich-results,.record-summary .summary-comment-grid.shared{grid-template-columns:1fr}
 
 @page{size:A4;margin:0}
 @media print{
@@ -136,10 +137,10 @@
   .print-patient-line span{min-width:0;max-width:100%;overflow-wrap:anywhere}.print-patient-line strong{color:#748096;font-weight:500}.print-patient-line b{font-weight:700}
   .print-title{display:flex;align-items:center;gap:3mm;margin:5mm 0 4mm}.print-title>span{width:10mm;height:10mm;display:grid;place-items:center;border-radius:3mm;background:#5f7dc9;color:white}.print-title>span svg{width:5.5mm;height:5.5mm}.print-title h1{margin:0 0 .7mm;color:#263a5b;font-size:17pt}.print-title p{margin:0;color:#748096;font-size:9pt}
   .print-ear-grid{display:grid;width:100%;min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:4mm}.print-ear{width:100%;min-width:0;overflow:hidden;padding:3.5mm;border:1px solid #dbe3ef;border-radius:3mm;background:#fbfcfe;break-inside:avoid}.print-ear h2{display:flex;align-items:center;gap:2mm;margin:0 0 2.5mm;color:#35445a;font-size:10.5pt}.print-ear.right h2{color:#d84a4a}.print-ear.left h2{color:#5f7dc9}.print-ear h2 span{width:7mm;height:7mm;display:grid;place-items:center;border-radius:2mm;background:#eaf1ff;color:#5f7dc9;font:800 10pt Arial}.print-ear.right h2 span{background:#fff0f0;color:#d84a4a}
-  .print-tympanometry-page .print-title,.print-audiometry-page .print-title{direction:ltr;justify-content:flex-start;text-align:left}.print-otoscopy-section{margin-top:3mm}.print-otoscopy-section>.print-subtitle{margin:0 0 2mm}.print-otoscopy-section>.print-subtitle h2{margin:0;color:#263a5b;font-size:17pt}.print-otoscopy-section .print-ear{padding:2.5mm}.print-otoscopy-section .print-ear h2{margin-bottom:1.5mm}.print-otoscopy-section .print-otoscopy-image{height:45mm;margin-bottom:2mm}.print-otoscopy-result{direction:ltr;text-align:left}.print-otoscopy-result>div{text-align:left}
+  .print-tympanometry-page .print-title,.print-audiometry-page .print-title{direction:ltr;justify-content:flex-start;text-align:left}.print-otoscopy-section{margin-top:3mm}.print-otoscopy-section+.print-ear-grid{margin-top:6mm}.print-otoscopy-section>.print-subtitle{margin:0 0 2mm}.print-otoscopy-section>.print-subtitle h2{margin:0;color:#263a5b;font-size:17pt}.print-otoscopy-section .print-ear{padding:2.5mm}.print-otoscopy-section .print-ear h2{margin-bottom:1.5mm}.print-otoscopy-section .print-otoscopy-image{height:45mm;margin-bottom:2mm}.print-otoscopy-result{direction:ltr;text-align:left}.print-otoscopy-result>div{text-align:left}
   .print-otoscopy-image{display:block;width:100%;height:70mm;margin-bottom:5mm;border:1px solid #dbe3ef;border-radius:2mm;object-fit:contain;background:white}
   .print-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0;padding:0;border-top:1px solid #e7ecf3}.print-page>.print-fields{grid-template-columns:repeat(2,1fr);margin-top:2mm;border:1px solid #dbe3ef;border-radius:3mm;overflow:hidden}.print-page>.print-fields dd{text-align:right}.print-fields>div{min-width:0;padding:2.2mm;border-bottom:1px solid #e7ecf3}.print-fields dt{margin-bottom:.8mm;color:#748096;font-size:8pt}.print-fields dd{margin:0;overflow-wrap:anywhere;font-size:9.5pt;font-weight:700}.print-fields dd small{color:#748096;font-size:8pt;font-weight:400}
-  .print-tymp-fields .print-fields{grid-template-columns:repeat(auto-fit,minmax(18%,1fr));overflow:hidden;border:1px solid #d8e0eb;border-radius:2mm;background:white}.print-tymp-fields .print-fields>div{padding:0;border-bottom:0;border-left:1px solid #e5eaf1;text-align:center}.print-tymp-fields .print-fields>div:last-child{border-left:0}.print-tymp-fields .print-fields dt{display:block;min-height:0;margin:0;padding:1.5mm .5mm;background:#f1f5fa;color:#526176;font-size:7.5pt;line-height:1.2;white-space:nowrap;text-align:center}.print-tymp-fields .print-fields dd{padding:1.5mm .5mm;border-top:1px solid #e5eaf1;font-size:10.5pt;text-align:center}.print-tymp-fields .print-fields dd small{font-size:8.5pt}
+  .print-tymp-fields .print-fields{direction:ltr;grid-template-columns:repeat(auto-fit,minmax(18%,1fr));overflow:hidden;border:1px solid #d8e0eb;border-radius:2mm;background:white}.print-tymp-fields .print-fields>div{padding:0;border-bottom:0;border-left:1px solid #e5eaf1;text-align:center}.print-tymp-fields .print-fields>div:first-child{border-left:0}.print-tymp-fields .print-fields dt{display:block;min-height:0;margin:0;padding:1.5mm .5mm;background:#f1f5fa;color:#526176;font-size:7.5pt;line-height:1.2;white-space:nowrap;text-align:center}.print-tymp-fields .print-fields dd{padding:1.5mm .5mm;border-top:1px solid #e5eaf1;font-size:10.5pt;text-align:center}.print-tymp-fields .print-fields dd small{font-size:8.5pt}
   .print-ear .summary-tymp-chart,.print-ear .summary-audiogram{width:100%;max-width:100%;min-width:0;margin:0 0 2.5mm;padding:1mm;background:white}.print-ear .summary-audiogram{height:auto;aspect-ratio:.699}.print-ear .summary-audiogram svg{width:112%;max-width:none;height:100%;min-width:0;background:white;transform:none}.print-ear .summary-audiogram svg text,.print-ear .summary-audiogram svg image{transform:none}.print-ear .summary-audiogram svg line{stroke-width:.45}.print-ear .summary-audiogram svg polyline{stroke-width:1.4}.print-ear.right .summary-audiogram .bc-line{stroke:#dc4141}.print-ear .summary-tymp-chart svg{width:100%;max-width:100%;min-width:0;cursor:default}.print-ear.right .summary-tymp-chart .drawn-curve{stroke:#dc4a4a}.print-ear.right .summary-tymp-chart .peak-marker circle{stroke:#dc4a4a}
   .print-data-table{width:100%;margin:2.5mm 0 0;border:1px solid #d8e0eb;border-collapse:separate;border-spacing:0;table-layout:fixed;overflow:hidden;border-radius:2mm;background:white;color:#263a5b;font:8pt Arial,sans-serif;text-align:center}.print-data-table caption{padding:1.5mm;color:#5f6f86;font-size:8pt;font-weight:700;text-align:left}.print-data-table th,.print-data-table td{height:7mm;padding:1mm;border-top:1px solid #e5eaf1;border-left:1px solid #e5eaf1;text-align:center;vertical-align:middle}.print-data-table th{background:#f1f5fa;color:#526176;font-weight:700}.print-data-table tr>*:first-child{border-left:0}.print-data-table thead tr:first-child>*{border-top:0}.print-data-table small{font-size:6.5pt;color:#8290a3}.speech-audiometry-table th,.speech-audiometry-table td{text-align:center}
   .print-tests{margin-top:3mm;break-inside:avoid}.print-tests .print-data-table{margin-top:0}.print-audiometric-tests-table .weber-indicator{display:inline-flex;align-items:center;justify-content:center;font-size:13pt;font-weight:700;line-height:1}.print-audiometric-tests-table .weber-arrow.left{color:#5f7dc9}.print-audiometric-tests-table .weber-arrow.right{color:#dc4141}
@@ -151,8 +152,17 @@
   .print-ear-grid{direction:ltr}
   .print-ear-grid>.print-ear{direction:rtl}
   .print-ear .summary-audiogram .bc-line{stroke-dasharray:10 9}
+  .print-audiometry-page .summary-audiogram .audiometry-grid-line{stroke:#000!important;stroke-width:2!important;opacity:1!important;shape-rendering:crispEdges}
   .print-data-table tbody td,.print-data-table tbody td small{color:#000!important;font-weight:800}
   .print-tympanometry-page .print-comments .print-note header strong,.print-audiometry-page .print-comments .print-note header strong{font-size:8pt}
+  .print-otoscopy-section .print-otoscopy-image{height:58mm}
+  .print-otoscopy-section+.print-ear-grid{margin-top:2mm}
+  .print-comments{margin-top:1.5mm}
+  .print-comment-grid{padding-top:0}
+  .print-tympanometry-page .print-note .print-doctor,.print-audiometry-page .print-note .print-doctor{margin-bottom:3mm;padding-bottom:2mm;border-bottom:1px solid #dbe3ef}
+  .print-tympanometry-page .print-comments .print-note header,.print-audiometry-page .print-comments .print-note header{margin-bottom:2mm}
+  .print-tympanometry-page .print-comments .print-note header strong,.print-audiometry-page .print-comments .print-note header strong{font-size:11pt}
+  .print-tympanometry-page .print-comments .print-note>div:not(.print-doctor),.print-audiometry-page .print-comments .print-note>div:not(.print-doctor){font-size:13pt;line-height:1.7}
  }
 
 /* Keep audiometry values easy to read and distinguish the two ears. */
@@ -168,6 +178,10 @@
 .speech-audiometry label{font-size:14px}
 .speech-audiometry label small{font-size:10px}
 .speech-audiometry input{font-size:18px;font-weight:700;text-align:center}
+.speech-audiometry fieldset{grid-template-columns:1fr}
+.speech-audiometry-condition{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.speech-audiometry-condition+.speech-audiometry-condition{padding-top:12px;border-top:1px solid #dfe4ea}
+.speech-audiometry-condition h4{grid-column:1/-1;margin:0;color:#68768a;font-size:12px}
 .speech-audiometry fieldset.right input{color:#dc4141}
 .speech-audiometry fieldset.left input{color:#5F7DC9}
 .speech-audiometry fieldset.right input[readonly]{color:#dc4141}

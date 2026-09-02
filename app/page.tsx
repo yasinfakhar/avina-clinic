@@ -39,7 +39,15 @@ type AudiometryModifier = "" | "M" | "NR" | "MD";
 type AudiometryCell = { value: string; modifier: AudiometryModifier };
 type AudiometryRow = Record<string, AudiometryCell>;
 type Audiometry = { ac: AudiometryRow; bc: AudiometryRow };
-type SpeechAudiometry = { srt: string; mcl: string; ucl: string };
+type SpeechAudiometry = {
+  srt: string;
+  mcl: string;
+  ucl: string;
+  srtNoise: string;
+  mclNoise: string;
+  uclNoise: string;
+};
+type SpeechAudiometryField = keyof SpeechAudiometry;
 type RinneResult = "" | "positive" | "negative";
 type WeberResult = "" | "left" | "right" | "both";
 type AudiometricTests = {
@@ -134,6 +142,9 @@ const emptySpeechAudiometry = (): SpeechAudiometry => ({
   srt: "",
   mcl: "",
   ucl: "",
+  srtNoise: "",
+  mclNoise: "",
+  uclNoise: "",
 });
 const normalizeSpeechAudiometry = (
   value?: SpeechAudiometry,
@@ -143,9 +154,17 @@ const normalizeSpeechAudiometry = (
   const threshold = Number(srt);
   const automaticMcl =
     srt.trim() && Number.isFinite(threshold) ? String(threshold + 30) : "";
+  const noiseThreshold = Number(normalized.srtNoise);
+  const automaticNoiseMcl =
+    normalized.srtNoise.trim() && Number.isFinite(noiseThreshold)
+      ? String(noiseThreshold + 30)
+      : "";
   return {
     ...normalized,
     mcl: normalized.mcl.trim() ? normalized.mcl : automaticMcl,
+    mclNoise: normalized.mclNoise.trim()
+      ? normalized.mclNoise
+      : automaticNoiseMcl,
   };
 };
 const emptyAudiometricTests = (): AudiometricTests => ({
@@ -156,14 +175,25 @@ const emptyAudiometricTests = (): AudiometricTests => ({
   dearDoctor: "",
   comments: { right: "", left: "" },
 });
+function mergeDoctorComments(right?: string, left?: string) {
+  if (!hasText(right)) return left || "";
+  if (!hasText(left) || right === left) return right || "";
+  return `${right}<br>${left}`;
+}
 const normalizeAudiometricTests = (
   value?: AudiometricTests,
-): AudiometricTests => ({
-  rinne: { ...emptyAudiometricTests().rinne, ...value?.rinne },
-  weber: { ...emptyAudiometricTests().weber, ...value?.weber },
-  dearDoctor: value?.dearDoctor || "",
-  comments: { ...emptyAudiometricTests().comments, ...value?.comments },
-});
+): AudiometricTests => {
+  const comment = mergeDoctorComments(
+    value?.comments?.right,
+    value?.comments?.left,
+  );
+  return {
+    rinne: { ...emptyAudiometricTests().rinne, ...value?.rinne },
+    weber: { ...emptyAudiometricTests().weber, ...value?.weber },
+    dearDoctor: value?.dearDoctor || "",
+    comments: { right: comment, left: comment },
+  };
+};
 const AUDIOMETRY_MIN = -10;
 const AUDIOMETRY_MAX = 120;
 const AUDIOMETRY_STEP = 5;
@@ -1002,7 +1032,7 @@ function Wizard({
     updateEar(side, { audiometry: value });
   const updateSpeechAudiometry = (
     side: "right" | "left",
-    field: "srt" | "mcl" | "ucl",
+    field: SpeechAudiometryField,
     value: string,
   ) => {
     const current = normalizeSpeechAudiometry(record[side].speechAudiometry);
@@ -1010,6 +1040,13 @@ function Wizard({
     if (field === "srt") {
       const threshold = Number(value);
       next.mcl =
+        value.trim() && Number.isFinite(threshold)
+          ? String(threshold + 30)
+          : "";
+    }
+    if (field === "srtNoise") {
+      const threshold = Number(value);
+      next.mclNoise =
         value.trim() && Number.isFinite(threshold)
           ? String(threshold + 30)
           : "";
@@ -1303,13 +1340,33 @@ function Wizard({
                   record.left.tympanometry?.dearDoctor ||
                   ""
                 }
-                rightComment={record.right.tympanometry?.comment || ""}
-                leftComment={record.left.tympanometry?.comment || ""}
+                comment={mergeDoctorComments(
+                  record.right.tympanometry?.comment,
+                  record.left.tympanometry?.comment,
+                )}
                 onDearDoctorChange={(text) => {
                   updateTympanometry("right", { dearDoctor: text });
                 }}
-                onCommentChange={(side, text) =>
-                  updateTympanometry(side, { comment: text })
+                onCommentChange={(text) =>
+                  setRecord((current) => ({
+                    ...current,
+                    right: {
+                      ...current.right,
+                      tympanometry: {
+                        ...emptyTympanometry(),
+                        ...current.right.tympanometry,
+                        comment: text,
+                      },
+                    },
+                    left: {
+                      ...current.left,
+                      tympanometry: {
+                        ...emptyTympanometry(),
+                        ...current.left.tympanometry,
+                        comment: text,
+                      },
+                    },
+                  }))
                 }
               />
             </>
@@ -1377,8 +1434,7 @@ function Wizard({
                   <CombinedDoctorComment
                     resultTitle="Audiometry Result"
                     dearDoctor={audiometricTests.dearDoctor}
-                    rightComment={audiometricTests.comments.right}
-                    leftComment={audiometricTests.comments.left}
+                    comment={audiometricTests.comments.right}
                     onDearDoctorChange={(text) =>
                       setRecord({
                         ...record,
@@ -1388,15 +1444,12 @@ function Wizard({
                         },
                       })
                     }
-                    onCommentChange={(side, text) =>
+                    onCommentChange={(text) =>
                       setRecord({
                         ...record,
                         audiometricTests: {
                           ...audiometricTests,
-                          comments: {
-                            ...audiometricTests.comments,
-                            [side]: text,
-                          },
+                          comments: { right: text, left: text },
                         },
                       })
                     }
@@ -1622,10 +1675,6 @@ function ReportPage({
         </div>
       </div>
       {children}
-      <footer>
-        <span>{record.fullName}</span>
-        <span>گزارش شنوایی‌سنجی آوینا</span>
-      </footer>
     </section>
   );
 }
@@ -1692,31 +1741,35 @@ function PrintReflexTable({ value }: { value: Tympanometry }) {
 }
 
 function PrintSpeechAudiometryTable({ value }: { value: SpeechAudiometry }) {
-  const fields: Array<[string, string, string]> = [
-    ["SRT", value.srt, "dB HL"],
-    ["MCL", value.mcl, "dB HL"],
-    ["UCL", value.ucl, "%"],
+  const rows: Array<[string, string, string, string]> = [
+    ["In Quiet", value.srt, value.mcl, value.ucl],
+    ["In Noise", value.srtNoise, value.mclNoise, value.uclNoise],
   ];
-  const populated = fields.filter(([, fieldValue]) => hasText(fieldValue));
+  const populated = rows.filter(([, ...values]) => values.some(hasText));
   if (!populated.length) return null;
   return (
     <table className="print-data-table speech-audiometry-table" dir="ltr">
       <thead>
         <tr>
-          {populated.map(([label]) => (
-            <th key={label}>{label}</th>
-          ))}
+          <th>Condition</th>
+          <th>SRT <small>dB HL</small></th>
+          <th>MCL <small>dB HL</small></th>
+          <th>UCL</th>
         </tr>
       </thead>
       <tbody>
-        <tr>
-          {populated.map(([label, fieldValue, unit]) => (
-            <td key={label}>
-              {fieldValue}
-              <small> {unit}</small>
-            </td>
-          ))}
-        </tr>
+        {populated.map(([condition, ...values]) => (
+          <tr key={condition}>
+            <th>{condition}</th>
+            {values.map((fieldValue, index) => (
+              <td key={index}>
+                {hasText(fieldValue)
+                  ? `${fieldValue}${index === 2 ? "%" : ""}`
+                  : "—"}
+              </td>
+            ))}
+          </tr>
+        ))}
       </tbody>
     </table>
   );
@@ -1778,44 +1831,37 @@ function PrintAudiometricTestsTable({ value }: { value: AudiometricTests }) {
 
 function PrintComments({
   dearDoctor,
-  comments,
+  comment,
   title,
 }: {
   dearDoctor?: string;
-  comments: Record<"right" | "left", string>;
+  comment: string;
   title: string;
 }) {
-  const populatedSides = (["left", "right"] as const).filter((side) =>
-    hasText(comments[side]),
-  );
-  if (!hasText(dearDoctor) && !populatedSides.length) return null;
+  if (!hasText(dearDoctor) && !hasText(comment)) return null;
   return (
     <section className="print-comments">
-      {hasText(dearDoctor) && (
-        <div className="print-doctor">
-          <span>Dear Dr.</span>
-          <strong dir="auto">{dearDoctor}</strong>
-        </div>
-      )}
-      {populatedSides.length > 0 && (
-        <div className="print-comment-grid">
-          {populatedSides.map((side) => (
-            <article className={`print-note ${side}`} key={side}>
-              <header>
-                <span>{side === "right" ? "R" : "L"}</span>
-                <strong>
-                  {title.replace(/\s+Result$/, "")}{" "}
-                  {side === "right" ? "RE" : "LE"} Result
-                </strong>
-              </header>
-              <div
-                dir="auto"
-                dangerouslySetInnerHTML={{ __html: comments[side] }}
-              />
-            </article>
-          ))}
-        </div>
-      )}
+      <div className="print-comment-grid">
+        <article className="print-note">
+          {hasText(dearDoctor) && (
+            <div className="print-doctor">
+              <span>Dear Dr.</span>
+              <strong dir="auto">{dearDoctor}</strong>
+            </div>
+          )}
+          {hasText(comment) && (
+            <>
+            <header>
+              <strong>{title}</strong>
+            </header>
+            <div
+              dir="auto"
+              dangerouslySetInnerHTML={{ __html: comment }}
+            />
+            </>
+          )}
+        </article>
+      </div>
     </section>
   );
 }
@@ -1826,6 +1872,10 @@ function PrintReport({ record }: { record: RecordItem }) {
   const tympanometryDoctor =
     record.right.tympanometry?.dearDoctor ||
     record.left.tympanometry?.dearDoctor;
+  const tympanometryComment = mergeDoctorComments(
+    record.right.tympanometry?.comment,
+    record.left.tympanometry?.comment,
+  );
   const hasOtoscopy = (side: "right" | "left") =>
     hasText(record[side].result) ||
     hasText(record[side].imageName) ||
@@ -1868,65 +1918,13 @@ function PrintReport({ record }: { record: RecordItem }) {
       {(sides.some(hasTympanometry) ||
         sides.some(hasOtoscopy) ||
         hasText(tympanometryDoctor) ||
-        sides.some((side) => hasText(record[side].tympanometry?.comment))) && (
+        hasText(tympanometryComment)) && (
         <ReportPage
           icon="tympanometry"
           title="Tympanometry"
           record={record}
           className="print-tympanometry-page"
         >
-          {sides.some(hasTympanometry) && (
-            <div className="print-ear-grid">
-              {sides.filter(hasTympanometry).map((side) => {
-                const saved = record[side].tympanometry;
-                const value = {
-                  ...emptyTympanometry(),
-                  ...saved,
-                  ipsi: { ...emptyReflex(), ...saved?.ipsi },
-                  contra: { ...emptyReflex(), ...saved?.contra },
-                };
-                const showChart =
-                  value.points.length > 0 ||
-                  (hasText(value.middleEarPressure) &&
-                    hasText(value.staticCompliance));
-                return (
-                  <article className={`print-ear ${side}`} key={side}>
-                    <h2>
-                      <span>{side === "right" ? "R" : "L"}</span> گوش{" "}
-                      {side === "right" ? "راست" : "چپ"}
-                    </h2>
-                    {showChart && (
-                      <TympanometrySummaryChart side={side} value={value} />
-                    )}
-                    <div className="print-tymp-fields">
-                      <ReportFields
-                        fields={[
-                          ["Type", value.type],
-                          ["Canal Vol.", value.canalVolume, "cc"],
-                          ["Stat. Comp.", value.staticCompliance, "cc"],
-                          [
-                            "M.E. Press.",
-                            value.middleEarPressure,
-                            "daPa",
-                          ],
-                          ["Gradient", value.gradient, "%"],
-                        ]}
-                      />
-                    </div>
-                    <PrintReflexTable value={value} />
-                  </article>
-                );
-              })}
-            </div>
-          )}
-          <PrintComments
-            dearDoctor={tympanometryDoctor}
-            comments={{
-              right: record.right.tympanometry?.comment || "",
-              left: record.left.tympanometry?.comment || "",
-            }}
-            title="Tympanometry Result"
-          />
           {sides.some(hasOtoscopy) && (
             <section className="print-otoscopy-section">
               <div className="print-title print-subtitle">
@@ -1969,12 +1967,61 @@ function PrintReport({ record }: { record: RecordItem }) {
               </div>
             </section>
           )}
+          {sides.some(hasTympanometry) && (
+            <div className="print-ear-grid">
+              {sides.filter(hasTympanometry).map((side) => {
+                const saved = record[side].tympanometry;
+                const value = {
+                  ...emptyTympanometry(),
+                  ...saved,
+                  ipsi: { ...emptyReflex(), ...saved?.ipsi },
+                  contra: { ...emptyReflex(), ...saved?.contra },
+                };
+                const showChart =
+                  value.points.length > 0 ||
+                  (hasText(value.middleEarPressure) &&
+                    hasText(value.staticCompliance));
+                return (
+                  <article className={`print-ear ${side}`} key={side}>
+                    <h2>
+                      <span>{side === "right" ? "R" : "L"}</span> گوش{" "}
+                      {side === "right" ? "راست" : "چپ"}
+                    </h2>
+                    {showChart && (
+                      <TympanometrySummaryChart side={side} value={value} />
+                    )}
+                    <div className="print-tymp-fields">
+                      <ReportFields
+                        fields={[
+                          ["Stat. Comp.", value.staticCompliance, "cc"],
+                          [
+                            "M.E. Press.",
+                            value.middleEarPressure,
+                            "daPa",
+                          ],
+                          ["Canal Vol.", value.canalVolume, "cc"],
+                          ["Gradient", value.gradient, "%"],
+                          ["Type", value.type],
+                        ]}
+                      />
+                    </div>
+                    <PrintReflexTable value={value} />
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          <PrintComments
+            dearDoctor={tympanometryDoctor}
+            comment={tympanometryComment}
+            title="Tympanometry Result"
+          />
         </ReportPage>
       )}
 
       {(sides.some(hasAudiometry) ||
         hasAudiometricTests ||
-        sides.some((side) => hasText(tests.comments[side]))) && (
+        hasText(tests.comments.right)) && (
         <ReportPage
           icon="audiometry"
           title="Audiometry"
@@ -2017,7 +2064,7 @@ function PrintReport({ record }: { record: RecordItem }) {
           )}
           <PrintComments
             dearDoctor={tests.dearDoctor}
-            comments={tests.comments}
+            comment={tests.comments.right}
             title="Audiometry Result"
           />
         </ReportPage>
@@ -2211,25 +2258,28 @@ function RecordSummary({ record }: { record: RecordItem }) {
             )}
           </strong>
         </div>
-        <div className="summary-comment-grid">
-          {ears.map((side) => {
-            const comment = record[side].tympanometry?.comment;
-            return (
-              <div className={`summary-note ${side}`} key={side}>
-                <small>
-                  Tympanometry {side === "right" ? "RE" : "LE"} Result
-                </small>
-                {comment ? (
-                  <div
-                    dir="auto"
-                    dangerouslySetInnerHTML={{ __html: comment }}
-                  />
-                ) : (
-                  <p>ثبت نشده</p>
-                )}
-              </div>
-            );
-          })}
+        <div className="summary-comment-grid shared">
+          <div className="summary-note">
+            <small>Tympanometry Result</small>
+            {hasText(
+              mergeDoctorComments(
+                record.right.tympanometry?.comment,
+                record.left.tympanometry?.comment,
+              ),
+            ) ? (
+              <div
+                dir="auto"
+                dangerouslySetInnerHTML={{
+                  __html: mergeDoctorComments(
+                    record.right.tympanometry?.comment,
+                    record.left.tympanometry?.comment,
+                  ),
+                }}
+              />
+            ) : (
+              <p>ثبت نشده</p>
+            )}
+          </div>
         </div>
       </section>
 
@@ -2243,6 +2293,9 @@ function RecordSummary({ record }: { record: RecordItem }) {
         <div className="summary-audiometry-grid">
           {ears.map((side) => {
             const audiometry = copyAudiometry(record[side].audiometry);
+            const speech = normalizeSpeechAudiometry(
+              record[side].speechAudiometry,
+            );
             return (
               <article className={`summary-ear ${side}`} key={side}>
                 <div className="summary-ear-title">
@@ -2294,14 +2347,21 @@ function RecordSummary({ record }: { record: RecordItem }) {
                 </div>
                 <h4 className="summary-speech-title">Speech Audiometry</h4>
                 <dl className="summary-details speech-values" dir="ltr">
-                  {Object.entries(
-                    normalizeSpeechAudiometry(record[side].speechAudiometry),
-                  ).map(([label, value]) => (
+                  {(
+                    [
+                      ["SRT (In Quiet)", speech.srt, "dB HL"],
+                      ["MCL (In Quiet)", speech.mcl, "dB HL"],
+                      ["UCL (In Quiet)", speech.ucl, "%"],
+                      ["SRT (In Noise)", speech.srtNoise, "dB HL"],
+                      ["MCL (In Noise)", speech.mclNoise, "dB HL"],
+                      ["UCL (In Noise)", speech.uclNoise, "%"],
+                    ] as const
+                  ).map(([label, value, unit]) => (
                     <div key={label}>
-                      <dt>{label.toUpperCase()}</dt>
+                      <dt>{label}</dt>
                       <dd>
                         {valueOrDash(value)}{" "}
-                        <small>{label === "ucl" ? "%" : "dB HL"}</small>
+                        <small>{unit}</small>
                       </dd>
                     </div>
                   ))}
@@ -2314,20 +2374,18 @@ function RecordSummary({ record }: { record: RecordItem }) {
           <span>Dear Dr.</span>
           <strong dir="auto">{valueOrDash(tests.dearDoctor)}</strong>
         </div>
-        <div className="summary-comment-grid">
-          {ears.map((side) => (
-            <div className={`summary-note ${side}`} key={side}>
-              <small>Audiometry Result</small>
-              {tests.comments[side] ? (
-                <div
-                  dir="auto"
-                  dangerouslySetInnerHTML={{ __html: tests.comments[side] }}
-                />
-              ) : (
-                <p>ثبت نشده</p>
-              )}
-            </div>
-          ))}
+        <div className="summary-comment-grid shared">
+          <div className="summary-note">
+            <small>Audiometry Result</small>
+            {hasText(tests.comments.right) ? (
+              <div
+                dir="auto"
+                dangerouslySetInnerHTML={{ __html: tests.comments.right }}
+              />
+            ) : (
+              <p>ثبت نشده</p>
+            )}
+          </div>
         </div>
         <div className="summary-tests" dir="ltr">
           <div className="rinne-summary right">
@@ -2442,7 +2500,13 @@ function AudiometrySummaryChart({
       >
         {yTicks.map((tick) => (
           <g key={tick}>
-            <line x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} />
+            <line
+              className="audiometry-grid-line"
+              x1={plot.left}
+              x2={plot.right}
+              y1={y(tick)}
+              y2={y(tick)}
+            />
             <text x="42" y={y(tick) + 4}>
               {tick}
             </text>
@@ -2451,6 +2515,7 @@ function AudiometrySummaryChart({
         {audiometryFrequencies.map((frequency, index) => (
           <g key={frequency}>
             <line
+              className="audiometry-grid-line"
               x1={x(index)}
               x2={x(index)}
               y1={plot.top * verticalScale}
@@ -3239,10 +3304,17 @@ function SpeechAudiometryPanel({
   values: Record<"right" | "left", SpeechAudiometry>;
   onChange: (
     side: "right" | "left",
-    field: "srt" | "mcl" | "ucl",
+    field: SpeechAudiometryField,
     value: string,
   ) => void;
 }) {
+  const conditions = [
+    { label: "In Quiet", fields: ["srt", "mcl", "ucl"] as const },
+    {
+      label: "In Noise",
+      fields: ["srtNoise", "mclNoise", "uclNoise"] as const,
+    },
+  ];
   return (
     <section className="speech-audiometry" dir="ltr">
       <div className="speech-audiometry-heading">
@@ -3253,40 +3325,31 @@ function SpeechAudiometryPanel({
         {(["right", "left"] as const).map((side) => (
           <fieldset className={side} key={side}>
             <legend>{side === "right" ? "Right Ear" : "Left Ear"}</legend>
-            <label>
-              <span>
-                SRT <small>dB HL</small>
-              </span>
-              <input
-                type="number"
-                step="5"
-                value={values[side].srt}
-                onChange={(event) => onChange(side, "srt", event.target.value)}
-              />
-            </label>
-            <label>
-              <span>
-                MCL <small>dB HL</small>
-              </span>
-              <input
-                type="number"
-                step="5"
-                value={values[side].mcl}
-                onChange={(event) => onChange(side, "mcl", event.target.value)}
-                aria-label={`${side} ear MCL, automatically calculated but editable`}
-              />
-            </label>
-            <label>
-              <span>
-                UCL <small>%</small>
-              </span>
-              <input
-                type="number"
-                step="5"
-                value={values[side].ucl}
-                onChange={(event) => onChange(side, "ucl", event.target.value)}
-              />
-            </label>
+            {conditions.map(({ label: condition, fields }) => (
+              <div className="speech-audiometry-condition" key={condition}>
+                <h4>{condition}</h4>
+                {fields.map((field, index) => {
+                  const label = ["SRT", "MCL", "UCL"][index];
+                  return (
+                    <label key={field}>
+                      <span>
+                        {label}{" "}
+                        <small>{label === "UCL" ? "%" : "dB HL"}</small>
+                      </span>
+                      <input
+                        type="number"
+                        step="5"
+                        value={values[side][field]}
+                        onChange={(event) =>
+                          onChange(side, field, event.target.value)
+                        }
+                        aria-label={`${side} ear ${label} (${condition})`}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
           </fieldset>
         ))}
       </div>
@@ -3362,17 +3425,15 @@ function AudiometricTestsPanel({
 
 function CombinedDoctorComment({
   dearDoctor,
-  rightComment,
-  leftComment,
+  comment,
   onDearDoctorChange,
   onCommentChange,
   resultTitle = "Tympanometry Result",
 }: {
   dearDoctor: string;
-  rightComment: string;
-  leftComment: string;
+  comment: string;
   onDearDoctorChange: (text: string) => void;
-  onCommentChange: (side: "right" | "left", text: string) => void;
+  onCommentChange: (text: string) => void;
   resultTitle?: string;
 }) {
   return (
@@ -3388,18 +3449,13 @@ function CombinedDoctorComment({
       </label>
       <div className="result-heading">
         <strong>{resultTitle}</strong>
-        <small>نتیجه هر دو گوش را با ابزارهای ویرایش ثبت کنید.</small>
+        <small>نتیجه مشترک هر دو گوش را ثبت کنید.</small>
       </div>
       <div className="rich-results">
         <RichTextEditor
-          side="left"
-          value={leftComment}
-          onChange={(text) => onCommentChange("left", text)}
-        />
-        <RichTextEditor
-          side="right"
-          value={rightComment}
-          onChange={(text) => onCommentChange("right", text)}
+          side="both"
+          value={comment}
+          onChange={onCommentChange}
         />
       </div>
     </fieldset>
@@ -3411,7 +3467,7 @@ function RichTextEditor({
   value,
   onChange,
 }: {
-  side: "right" | "left";
+  side: "right" | "left" | "both";
   value: string;
   onChange: (text: string) => void;
 }) {
@@ -3428,8 +3484,14 @@ function RichTextEditor({
   return (
     <section className={`rich-editor ${side}`}>
       <header>
-        <span className="ear-code">{side === "right" ? "R" : "L"}</span>
-        <strong>گوش {side === "right" ? "راست" : "چپ"}</strong>
+        {side !== "both" && (
+          <span className="ear-code">{side === "right" ? "R" : "L"}</span>
+        )}
+        <strong>
+          {side === "both"
+            ? "نتیجه هر دو گوش"
+            : `گوش ${side === "right" ? "راست" : "چپ"}`}
+        </strong>
       </header>
       <div className="rich-toolbar" dir="ltr">
         <button
