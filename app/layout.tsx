@@ -8,7 +8,7 @@ const vazirmatn = Vazirmatn({
 });
 
 export const metadata: Metadata = {
-  title: "آوینا | سامانه مدیریت شنوایی‌سنجی",
+  title: "سامانه مدیریت شنوایی‌سنجی",
   description: "مدیریت پرونده‌ها و تشخیص‌های شنوایی‌سنجی",
   other: {
     "codex-preview": "development",

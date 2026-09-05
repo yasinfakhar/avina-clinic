@@ -760,13 +760,8 @@ export default function Home() {
     <main dir="rtl">
       <header className="topbar">
         <div className="brand">
-          <img
-            className="brand-mark"
-            src="/avina-logo-transparent.png"
-            alt="لوگوی آوینا"
-          />
+          <strong className="brand-name">شنوایی شناسی و تجویز سمعک</strong>
           <div>
-            <strong>آوینا</strong>
             <small>سامانه مدیریت شنوایی‌سنجی</small>
           </div>
         </div>
@@ -1006,12 +1001,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
   return (
     <main className="login-page" dir="rtl">
       <section className="login-card">
-        <img
-          className="login-logo"
-          src="/avina-logo-transparent.png"
-          alt="لوگوی آوینا"
-        />
-        <h1>ورود به سامانه آوینا</h1>
+        <div className="login-brand-name">شنوایی شناسی و تجویز سمعک</div>
         <p>مدیریت یکپارچه پرونده‌های شنوایی‌سنجی</p>
         <form onSubmit={submit}>
           <label>
@@ -1727,7 +1717,7 @@ function ReportPage({
         <img
           className="print-letterhead"
           src="/header.jpg"
-          alt="سربرگ کلینیک شنوایی آوینا"
+          alt="سربرگ کلینیک شنوایی"
         />
         <span className="print-visit-date" dir="rtl">
           تاریخ مراجعه: {formatTehranDateTime(currentTimestamp()).split("،")[0]}
