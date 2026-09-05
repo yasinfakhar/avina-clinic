@@ -12,7 +12,11 @@ import React, {
 import { BirthDatePicker } from "./components/BirthDatePicker";
 import { AutocompleteInput } from "./components/AutocompleteInput";
 import { ImageAnnotator } from "./components/ImageAnnotator";
-import { currentTimestamp, formatTehranDateTime } from "./tehran-time";
+import {
+  currentTimestamp,
+  formatTehranDateTime,
+  tehranDateFilePart,
+} from "./tehran-time";
 
 type Arrow = {
   startX: number;
@@ -565,6 +569,8 @@ export default function Home() {
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [current, setCurrent] = useState<RecordItem>(emptyRecord);
   const [query, setQuery] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [toast, setToast] = useState("");
   const [printRecord, setPrintRecord] = useState<RecordItem | null>(null);
   const [saving, setSaving] = useState(false);
@@ -651,11 +657,27 @@ export default function Home() {
   }, [current, step, view, loggedIn]);
 
   const filtered = useMemo(
-    () =>
-      records.filter((r) =>
-        `${r.fullName} ${r.nationalId} ${r.doctorName}`.includes(query),
-      ),
-    [records, query],
+    () => {
+      const dateKey = (value: string) =>
+        value
+          .replace(/[۰-۹]/g, (digit) =>
+            String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)),
+          )
+          .replaceAll("/", "-");
+      const start = dateKey(startDate);
+      const end = dateKey(endDate);
+      return records.filter((record) => {
+        const updatedDate = tehranDateFilePart(record.updatedAt);
+        return (
+          `${record.fullName} ${record.nationalId} ${record.doctorName}`.includes(
+            query,
+          ) &&
+          (!start || updatedDate >= start) &&
+          (!end || updatedDate <= end)
+        );
+      });
+    },
+    [records, query, startDate, endDate],
   );
   const notify = (message: string) => {
     setToast(message);
@@ -820,16 +842,76 @@ export default function Home() {
             <div className="panel-head">
               <div>
                 <h2>فهرست بیماران</h2>
-                <p>{records.length.toLocaleString("fa-IR")} پرونده در سامانه</p>
+                <p>
+                  {filtered.length.toLocaleString("fa-IR")} پرونده نمایش داده می‌شود
+                </p>
               </div>
-              <label className="search">
-                <Icon name="search" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="جستجو نام، کد ملی یا پزشک..."
-                />
-              </label>
+              <div
+                className="panel-filters"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  maxWidth: "100%",
+                }}
+              >
+                <label className="search">
+                  <Icon name="search" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="جستجو نام، کد ملی یا پزشک..."
+                  />
+                </label>
+                <div
+                  className="date-range"
+                  aria-label="فیلتر تاریخ بروزرسانی"
+                  style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+                >
+                  <div className="date-filter-field" style={{ width: 150 }}>
+                    <BirthDatePicker
+                      value={startDate}
+                      onChange={setStartDate}
+                      placeholder="از تاریخ"
+                      ariaLabel="انتخاب تاریخ شروع"
+                      compact
+                    />
+                  </div>
+                  <div className="date-filter-field" style={{ width: 150 }}>
+                    <BirthDatePicker
+                      value={endDate}
+                      onChange={setEndDate}
+                      placeholder="تا تاریخ"
+                      ariaLabel="انتخاب تاریخ پایان"
+                      compact
+                    />
+                  </div>
+                  {(startDate || endDate) && (
+                    <button
+                      className="clear-date-filter"
+                      type="button"
+                      aria-label="پاک کردن فیلتر تاریخ"
+                      title="پاک کردن فیلتر تاریخ"
+                      style={{
+                        width: 32,
+                        height: 40,
+                        border: 0,
+                        background: "transparent",
+                        color: "#8a96a8",
+                        fontSize: 20,
+                      }}
+                      onClick={() => {
+                        setStartDate("");
+                        setEndDate("");
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="table-wrap">
               <table>

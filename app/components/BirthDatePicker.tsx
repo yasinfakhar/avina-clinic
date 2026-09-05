@@ -114,9 +114,17 @@ type BirthDatePickerProps = {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  ariaLabel?: string;
+  compact?: boolean;
 };
 
-export function BirthDatePicker({ value, onChange, placeholder = "۱۳۷۰/۰۱/۰۱" }: BirthDatePickerProps) {
+export function BirthDatePicker({
+  value,
+  onChange,
+  placeholder = "۱۳۷۰/۰۱/۰۱",
+  ariaLabel = "انتخاب تاریخ تولد",
+  compact = false,
+}: BirthDatePickerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const selected = useMemo(() => parseJalali(value), [value]);
@@ -170,6 +178,7 @@ export function BirthDatePicker({ value, onChange, placeholder = "۱۳۷۰/۰۱/
       <button
         type="button"
         className={`birth-datepicker-trigger${value ? " has-value" : ""}`}
+        style={compact ? { height: 40 } : undefined}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -184,7 +193,12 @@ export function BirthDatePicker({ value, onChange, placeholder = "۱۳۷۰/۰۱/
         </svg>
       </button>
       {open && (
-        <div className="birth-datepicker-panel" role="dialog" aria-label="انتخاب تاریخ تولد">
+        <div
+          className="birth-datepicker-panel"
+          role="dialog"
+          aria-label={ariaLabel}
+          style={compact ? { right: 0, left: "auto", width: 280 } : undefined}
+        >
           <div className="birth-datepicker-head">
             <button type="button" aria-label="ماه قبل" onClick={() => shiftMonth(-1)}>‹</button>
             <div className="birth-datepicker-selectors">
