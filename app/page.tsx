@@ -1590,7 +1590,7 @@ function Wizard({
                         <strong>گوش {side === "right" ? "راست" : "چپ"}</strong>
                         <span>TYPE: {t?.type || "—"}</span>
                         <span>CANAL VOL: {t?.canalVolume || "—"} cc</span>
-                        <span>STAT.COMP: {t?.staticCompliance || "—"} cc</span>
+                        <span>STAT.COMP: {t?.staticCompliance || "—"} ml</span>
                         <span>
                           M.E.PRESS: {t?.middleEarPressure || "—"} daPa
                         </span>
@@ -1888,7 +1888,7 @@ function PrintAudiometricTestsTable({ value }: { value: AudiometricTests }) {
             <td key={field.label}>{field.value}</td>
           ))}
           {weberFields.map((field) => (
-            <td key={field.label} aria-label={field.value}>
+            <td key={field.label} aria-label={weberLabel(field.value)}>
               <WeberIndicator value={field.value} />
             </td>
           ))}
@@ -2065,7 +2065,7 @@ function PrintReport({ record }: { record: RecordItem }) {
                     <div className="print-tymp-fields">
                       <ReportFields
                         fields={[
-                          ["Stat. Comp.", value.staticCompliance, "cc"],
+                          ["Stat. Comp.", value.staticCompliance, "ml"],
                           [
                             "M.E. Press.",
                             value.middleEarPressure,
@@ -2278,7 +2278,7 @@ function RecordSummary({ record }: { record: RecordItem }) {
                   <div>
                     <dt>Stat. Comp.</dt>
                     <dd>
-                      {valueOrDash(tymp.staticCompliance)} <small>cc</small>
+                      {valueOrDash(tymp.staticCompliance)} <small>ml</small>
                     </dd>
                   </div>
                   <div>
@@ -2492,15 +2492,7 @@ function RecordSummary({ record }: { record: RecordItem }) {
             <div className="weber-summary" key={frequency}>
               <span>Weber {frequency} Hz</span>
               <strong
-                aria-label={
-                  tests.weber[frequency] === "left"
-                    ? "Left"
-                    : tests.weber[frequency] === "right"
-                      ? "Right"
-                      : tests.weber[frequency] === "both"
-                        ? "Both"
-                        : "Not recorded"
-                }
+                aria-label={weberLabel(tests.weber[frequency])}
               >
                 <WeberIndicator value={tests.weber[frequency]} />
               </strong>
@@ -2712,7 +2704,7 @@ function TympanometrySummaryChart({
           </g>
         ))}
         <text className="axis-label" x="18" y="13">
-          cc
+          ml
         </text>
         <text className="axis-label" x="580" y="283">
           daPa
@@ -2915,7 +2907,7 @@ function TympanometryCard({
             </g>
           ))}
           <text className="axis-label" x="18" y="13">
-            cc
+            ml
           </text>
           <text className="axis-label" x="580" y="283">
             daPa
@@ -2972,7 +2964,7 @@ function TympanometryCard({
         </label>
         <label>
           <span>
-            STAT.COMP <em>(cc)</em>
+            STAT.COMP <em>(ml)</em>
           </span>
           <input
             dir="ltr"
@@ -3369,6 +3361,16 @@ function WeberIndicator({ value }: { value: WeberResult }) {
   );
 }
 
+function weberLabel(value: WeberResult) {
+  return value === "left"
+    ? "Right"
+    : value === "right"
+      ? "Left"
+      : value === "both"
+        ? "Both"
+        : "Not recorded";
+}
+
 function SpeechAudiometryPanel({
   values,
   onChange,
@@ -3462,7 +3464,7 @@ function AudiometricTestsPanel({
       <div className="weber-controls">
         <div className="weber-heading">
           <strong>Weber Audiometric</strong>
-          <small>Red: left / Blue: right</small>
+          <small>Red: right / Blue: left</small>
         </div>
         <div className="weber-frequency-grid">
           {weberFrequencies.map((frequency) => (
@@ -3479,8 +3481,8 @@ function AudiometricTestsPanel({
                   }
                 >
                   <option value="">Select</option>
-                  <option value="left">← Left</option>
-                  <option value="right">→ Right</option>
+                  <option value="left">← Right</option>
+                  <option value="right">→ Left</option>
                   <option value="both">← → Both</option>
                 </select>
                 <span className="weber-selected">

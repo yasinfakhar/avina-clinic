@@ -20,10 +20,10 @@ function drawArrow(ctx: CanvasRenderingContext2D, arrow: Arrow, width: number, h
   const endY = arrow.endY * scaleY;
   const angle = Math.atan2(endY - startY, endX - startX);
   const visualScale = width / sourceWidth;
-  const headLength = 16 * visualScale;
+  const headLength = 28 * visualScale;
 
-  ctx.strokeStyle = "#e04444";
-  ctx.lineWidth = Math.max(3 * visualScale, 2);
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = Math.max(7 * visualScale, 3);
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(startX, startY);
