@@ -2668,10 +2668,11 @@ function TympanometrySummaryChart({
       peakCompliance >= 0 &&
       peakCompliance <= 2.5;
   const automaticPoints = hasPeak
-    ? Array.from({ length: 41 }, (_, i) => {
-        const offset = -200 + i * 10,
+    ? Array.from({ length: 51 }, (_, i) => {
+        const offset = -300 + i * 10,
+          span = offset < 0 ? 300 : 200,
           decay =
-            (Math.exp((-4 * Math.abs(offset)) / 200) - Math.exp(-4)) /
+            (Math.exp((-4 * Math.abs(offset)) / span) - Math.exp(-4)) /
             (1 - Math.exp(-4));
         return {
           pressure: peakPressure + offset,
@@ -2827,10 +2828,11 @@ function TympanometryCard({
     text: string,
   ) => onChange({ [row]: { ...value[row], [frequency]: text } });
   const automaticPoints = hasPeak
-    ? Array.from({ length: 41 }, (_, i) => {
-        const offset = -200 + i * 10,
+    ? Array.from({ length: 51 }, (_, i) => {
+        const offset = -300 + i * 10,
+          span = offset < 0 ? 300 : 200,
           decay =
-            (Math.exp((-4 * Math.abs(offset)) / 200) - Math.exp(-4)) /
+            (Math.exp((-4 * Math.abs(offset)) / span) - Math.exp(-4)) /
             (1 - Math.exp(-4));
         return {
           pressure: peakPressure + offset,
@@ -2946,7 +2948,7 @@ function TympanometryCard({
           {drawMode === "pencil"
             ? "برای رسم آزاد، مداد را روی نمودار بکشید."
             : hasPeak
-              ? "منحنی خودکار در فاصله ۲۰۰ daPa از دو طرف قله به محور می‌رسد."
+              ? "منحنی خودکار در فاصله ۳۰۰ daPa از چپ و ۲۰۰ daPa از راست قله به محور می‌رسد."
               : "برای نمایش منحنی خودکار، STAT.COMP و M.E.PRESS را وارد کنید."}
         </small>
       </div>
