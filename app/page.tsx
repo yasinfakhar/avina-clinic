@@ -1316,7 +1316,7 @@ function Wizard({
                 </div>
               </div>
               <div className="ear-grid">
-                {(["right", "left"] as const).map((side) => (
+                {(["left", "right"] as const).map((side) => (
                   <div className={`ear-card ${side}`} key={side}>
                     <h3>گوش {side === "right" ? "راست" : "چپ"}</h3>
                     <div className="image-upload-wrapper">
