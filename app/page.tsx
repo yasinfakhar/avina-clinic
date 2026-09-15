@@ -760,9 +760,9 @@ export default function Home() {
     <main dir="rtl">
       <header className="topbar">
         <div className="brand">
-          <strong className="brand-name">شنوایی شناسی و تجویز سمعک</strong>
+          <strong className="brand-name">شنوایی شناسی</strong>
           <div>
-            <small>سامانه مدیریت شنوایی‌سنجی</small>
+            {/* <small>سامانه مدیریت شنوایی‌سنجی</small> */}
           </div>
         </div>
         <div className="profile">
@@ -1001,7 +1001,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
   return (
     <main className="login-page" dir="rtl">
       <section className="login-card">
-        <div className="login-brand-name">شنوایی شناسی و تجویز سمعک</div>
+        <div className="login-brand-name">شنوایی شناسی</div>
         <p>مدیریت یکپارچه پرونده‌های شنوایی‌سنجی</p>
         <form onSubmit={submit}>
           <label>
