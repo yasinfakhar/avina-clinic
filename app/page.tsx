@@ -1716,7 +1716,7 @@ function ReportPage({
       <header className="print-header">
         <img
           className="print-letterhead"
-          src="/header.jpg"
+          src="/header.png"
           alt="سربرگ کلینیک شنوایی"
         />
         <span className="print-visit-date" dir="rtl">
