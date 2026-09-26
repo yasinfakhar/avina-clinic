@@ -85,9 +85,6 @@ type RecordItem = {
   updatedAt: string;
 };
 
-const LOGIN_SESSION_KEY = "audiology-login";
-const LOGIN_SESSION_VALUE = "admin-only-v1";
-
 const emptyRecord = (): RecordItem => ({
   id: `A-${Date.now().toString().slice(-6)}`,
   doctorName: "",
@@ -564,7 +561,7 @@ function ActionButton({
 
 export default function Home() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [view, setView] = useState<"dashboard" | "wizard">("dashboard");
+  const [view, setView] = useState<"dashboard" | "wizard" | "settings">("dashboard");
   const [step, setStep] = useState(1);
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [current, setCurrent] = useState<RecordItem>(emptyRecord);
@@ -574,6 +571,9 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [printRecord, setPrintRecord] = useState<RecordItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [desktop] = useState(
+    () => typeof window !== "undefined" && Boolean(window.audiologyDesktop),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -596,6 +596,7 @@ export default function Home() {
       };
     }
     const loadRecords = async () => {
+      if (!loggedIn) return;
       try {
         const saved = localStorage.getItem("audiology-records");
         if (saved) {
@@ -625,15 +626,10 @@ export default function Home() {
       }
     };
     void loadRecords();
-    startTransition(() =>
-      setLoggedIn(
-        sessionStorage.getItem(LOGIN_SESSION_KEY) === LOGIN_SESSION_VALUE,
-      ),
-    );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loggedIn]);
 
   useEffect(() => {
     if (!loggedIn || view !== "wizard" || current.status !== "draft") return;
@@ -678,6 +674,18 @@ export default function Home() {
       });
     },
     [records, query, startDate, endDate],
+  );
+  const otoscopySuggestions = useMemo(
+    () =>
+      [
+        ...new Set(
+          records
+            .flatMap((record) => [record.right.result, record.left.result])
+            .map((result) => result.trim())
+            .filter(Boolean),
+        ),
+      ],
+    [records],
   );
   const notify = (message: string) => {
     setToast(message);
@@ -750,7 +758,6 @@ export default function Home() {
     return (
       <Login
         onLogin={() => {
-          sessionStorage.setItem(LOGIN_SESSION_KEY, LOGIN_SESSION_VALUE);
           setLoggedIn(true);
         }}
       />
@@ -766,6 +773,9 @@ export default function Home() {
           </div>
         </div>
         <div className="profile">
+          {desktop && (
+            <button className="secondary settings-button" onClick={() => setView("settings")}>تنظیمات</button>
+          )}
           <span className="avatar">د</span>
           <div>
             <strong>سمیرا محمدی </strong>
@@ -774,7 +784,6 @@ export default function Home() {
           <button
             className="logout"
             onClick={() => {
-              sessionStorage.removeItem(LOGIN_SESSION_KEY);
               setLoggedIn(false);
             }}
           >
@@ -782,7 +791,9 @@ export default function Home() {
           </button>
         </div>
       </header>
-      {view === "dashboard" ? (
+      {view === "settings" ? (
+        <DesktopSettings onBack={() => setView("dashboard")} notify={notify} />
+      ) : view === "dashboard" ? (
         <section className="shell">
           <div className="hero-row">
             <div>
@@ -976,6 +987,7 @@ export default function Home() {
           onSave={save}
           saving={saving}
           notify={notify}
+          otoscopySuggestions={otoscopySuggestions}
         />
       )}
       <PrintReport record={current} />
@@ -984,18 +996,84 @@ export default function Home() {
   );
 }
 
+function DesktopSettings({ onBack, notify }: { onBack: () => void; notify: (message: string) => void }) {
+  const [info, setInfo] = useState<{ version: string; dataDirectory: string; platform: string; arch: string } | null>(null);
+  const [destination, setDestination] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [update, setUpdate] = useState<Record<string, unknown>>({ state: "idle" });
+  useEffect(() => {
+    void window.audiologyDesktop?.getInfo().then(setInfo);
+    return window.audiologyDesktop?.onUpdateStatus(setUpdate);
+  }, []);
+  const run = async (operation: () => Promise<unknown>, success: string) => {
+    setBusy(true);
+    try { await operation(); notify(success); } catch (error) { notify(error instanceof Error ? error.message : "عملیات ناموفق بود"); } finally { setBusy(false); }
+  };
+  return (
+    <section className="shell desktop-settings">
+      <div className="hero-row"><div><p className="eyebrow">برنامه دسکتاپ</p><h1>تنظیمات</h1><p>ذخیره‌سازی محلی، سربرگ، پشتیبان‌گیری و به‌روزرسانی</p></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
+      <article className="settings-panel">
+        <h2>محل نگهداری اطلاعات</h2>
+        <code dir="ltr">{info?.dataDirectory || "..."}</code>
+        <div className="settings-actions">
+          <button disabled={busy} onClick={() => void window.audiologyDesktop?.openDataDirectory()}>باز کردن پوشه</button>
+          <button disabled={busy} onClick={async () => { const chosen = await window.audiologyDesktop?.chooseDataDirectory(); if (chosen) setDestination(chosen); }}>انتخاب محل جدید</button>
+          <button className="primary" disabled={busy || !destination} onClick={() => run(() => window.audiologyDesktop!.moveDataDirectory(destination), "اطلاعات منتقل شد؛ برنامه دوباره اجرا می‌شود")}>انتقال امن اطلاعات</button>
+        </div>
+        {destination && <p><small>محل جدید: <span dir="ltr">{destination}</span></small></p>}
+      </article>
+      <article className="settings-panel">
+        <h2>سربرگ گزارش</h2>
+        <img className="settings-header-preview" src={`/api/settings/header?t=${String(update.state)}`} alt="پیش‌نمایش سربرگ" />
+        <div className="settings-actions">
+          <button disabled={busy} onClick={() => run(() => window.audiologyDesktop!.chooseHeader(), "سربرگ ذخیره شد")}>انتخاب تصویر</button>
+          <button disabled={busy} onClick={() => run(() => window.audiologyDesktop!.removeHeader(), "سربرگ سفارشی حذف شد")}>حذف سربرگ سفارشی</button>
+        </div>
+      </article>
+      <article className="settings-panel">
+        <h2>پشتیبان‌گیری</h2>
+        <button className="primary" disabled={busy} onClick={() => run(() => window.audiologyDesktop!.createBackup(), "نسخه پشتیبان ایجاد شد")}>ایجاد نسخه پشتیبان</button>
+      </article>
+      <article className="settings-panel">
+        <h2>به‌روزرسانی برنامه</h2>
+        <p>نسخه {info?.version || "..."} — {info?.platform}/{info?.arch}</p>
+        <p>وضعیت: {String(update.state)}</p>
+        {typeof (update.progress as { percent?: number } | undefined)?.percent === "number" && <progress value={(update.progress as { percent: number }).percent} max={100} />}
+        <div className="settings-actions">
+          <button disabled={busy || update.state === "checking"} onClick={() => run(() => window.audiologyDesktop!.checkForUpdates(), "بررسی به‌روزرسانی آغاز شد")}>بررسی به‌روزرسانی</button>
+          {update.state === "downloaded" && <button className="primary" onClick={() => run(() => window.audiologyDesktop!.installUpdate(), "نصب به‌روزرسانی آغاز شد")}>راه‌اندازی مجدد و نصب</button>}
+        </div>
+      </article>
+    </section>
+  );
+}
+
 function Login({ onLogin }: { onLogin: () => void }) {
   const [show, setShow] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const [submitting, setSubmitting] = useState(false);
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (username === "admin" && password === "samisami") {
+    setSubmitting(true);
+    try {
+      if (!window.audiologyDesktop) throw new Error("این نسخه باید از طریق برنامه دسکتاپ اجرا شود.");
+      await window.audiologyDesktop.login(username, password);
       onLogin();
-      return;
+    } catch (reason) {
+      const code = typeof reason === "object" && reason && "code" in reason ? String(reason.code) : "";
+      const messages: Record<string, string> = {
+        INVALID_CREDENTIALS: "نام کاربری یا رمز عبور اشتباه است.",
+        ACCOUNT_DISABLED: "این حساب غیرفعال شده است.",
+        DEVICE_LIMIT_REACHED: "تعداد دستگاه‌های مجاز این حساب تکمیل شده است.",
+        DEVICE_REVOKED: "مجوز این دستگاه لغو شده است.",
+        OFFLINE_LICENSE_EXPIRED: "اعتبار آفلاین تمام شده است؛ به اینترنت متصل شوید.",
+      };
+      setError(messages[code] || (reason instanceof Error ? reason.message : "ورود ناموفق بود."));
+    } finally {
+      setSubmitting(false);
     }
-    setError("نام کاربری یا رمز عبور اشتباه است.");
   };
 
   return (
@@ -1051,7 +1129,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
             </label>
             <a href="#">فراموشی رمز عبور</a>
           </div>
-          <button className="primary wide">ورود به سامانه</button>
+          <button className="primary wide" disabled={submitting}>{submitting ? "در حال بررسی..." : "ورود به سامانه"}</button>
         </form>
         <small>نسخه ۱.۰ · سامانه تخصصی کلینیک شنوایی</small>
       </section>
@@ -1068,6 +1146,7 @@ function Wizard({
   onSave,
   saving,
   notify,
+  otoscopySuggestions,
 }: {
   step: number;
   setStep: (n: number) => void;
@@ -1077,6 +1156,7 @@ function Wizard({
   onSave: () => void;
   saving: boolean;
   notify: (s: string) => void;
+  otoscopySuggestions: string[];
 }) {
   const [annotatingSide, setAnnotatingSide] = useState<"right" | "left" | null>(
     null,
@@ -1159,12 +1239,19 @@ function Wizard({
         file,
         file.name,
       );
-      updateEar(side, {
-        imageName: file.name,
-        imageDataUrl: currentImage.url,
-        originalImageDataUrl: original.url,
-        arrows: [],
-      });
+      const savedRecord: RecordItem = {
+        ...record,
+        [side]: {
+          ...record[side],
+          imageName: file.name,
+          imageDataUrl: currentImage.url,
+          originalImageDataUrl: original.url,
+          arrows: [],
+        },
+        updatedAt: currentTimestamp(),
+      };
+      setRecord(savedRecord);
+      await persistRecord(savedRecord);
     } catch {
       notify("ذخیره تصویر ناموفق بود");
     }
@@ -1176,12 +1263,19 @@ function Wizard({
         { method: "DELETE" },
       );
       if (!response.ok) throw new Error();
-      updateEar(side, {
-        imageName: "",
-        imageDataUrl: "",
-        originalImageDataUrl: "",
-        arrows: [],
-      });
+      const savedRecord: RecordItem = {
+        ...record,
+        [side]: {
+          ...record[side],
+          imageName: "",
+          imageDataUrl: "",
+          originalImageDataUrl: "",
+          arrows: [],
+        },
+        updatedAt: currentTimestamp(),
+      };
+      setRecord(savedRecord);
+      await persistRecord(savedRecord);
     } catch {
       notify("حذف تصویر ناموفق بود");
     }
@@ -1372,7 +1466,11 @@ function Wizard({
                         value={record[side].result}
                         onChange={(v) => updateEar(side, { result: v })}
                         placeholder="نتیجه معاینه را تایپ کنید..."
-                        suggestions={["Normal TM", "O4"]}
+                        suggestions={[
+                          "Normal TM",
+                          "O4",
+                          ...otoscopySuggestions,
+                        ]}
                       />
                     </label>
                   </div>
@@ -1668,7 +1766,17 @@ function Wizard({
                   blob,
                   record[side].imageName || `${side}.jpg`,
                 );
-                updateEar(side, { imageDataUrl: uploaded.url, arrows });
+                const savedRecord: RecordItem = {
+                  ...record,
+                  [side]: {
+                    ...record[side],
+                    imageDataUrl: uploaded.url,
+                    arrows,
+                  },
+                  updatedAt: currentTimestamp(),
+                };
+                setRecord(savedRecord);
+                await persistRecord(savedRecord);
                 setAnnotatingSide(null);
               } catch {
                 notify("ذخیره تصویر علامت‌گذاری‌شده ناموفق بود");
@@ -1716,7 +1824,7 @@ function ReportPage({
       <header className="print-header">
         <img
           className="print-letterhead"
-          src="/header.png"
+          src="/api/settings/header"
           alt="سربرگ کلینیک شنوایی"
         />
         <span className="print-visit-date" dir="rtl">

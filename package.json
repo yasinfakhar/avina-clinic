@@ -1,5 +1,5 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "avina-audiology",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -14,11 +14,18 @@
     "backup": "node scripts/backup.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
+    "desktop:dev": "electron electron/main.mjs --dev",
+    "desktop:pack": "npm run build && electron-builder --dir",
+    "desktop:dist": "npm run build && electron-builder",
+    "license-server": "node server/index.mjs"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "0.45.2",
+    "electron-updater": "^6.6.2",
     "next": "16.2.6",
+    "pg": "^8.16.3",
     "puppeteer-core": "^25.9.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
@@ -32,6 +39,8 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
+    "electron": "^38.2.1",
+    "electron-builder": "^26.0.12",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",
@@ -41,5 +50,17 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "main": "electron/main.mjs",
+  "build": {
+    "appId": "com.avina.audiology",
+    "productName": "Avina Audiology",
+    "asar": true,
+    "files": ["electron/**/*", ".next/**/*", "public/**/*", "app/**/*", "db/**/*", "package.json", "next.config.ts"],
+    "directories": { "output": "release" },
+    "publish": [{ "provider": "generic", "url": "https://updates.example.invalid/avina" }],
+    "win": { "target": ["nsis"], "artifactName": "Avina-Audiology-${version}-${arch}.${ext}" },
+    "mac": { "target": ["dmg", "zip"], "hardenedRuntime": true, "notarize": false, "artifactName": "Avina-Audiology-${version}-${arch}.${ext}" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
 }

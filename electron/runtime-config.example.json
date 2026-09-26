@@ -1,0 +1,4 @@
+{
+  "licenseServerUrl": "https://license.example.com",
+  "licensePublicKey": "-----BEGIN PUBLIC KEY-----\nREPLACE_DURING_RELEASE_BUILD\n-----END PUBLIC KEY-----"
+}

@@ -225,3 +225,4 @@
   .record-summary .summary-tests .rinne-summary.left{grid-column:auto}
   .record-summary .summary-tests .weber-summary{grid-row:auto;grid-column:auto}
 }
+.settings-button{margin-left:12px}.desktop-settings{display:grid;gap:16px}.settings-panel{padding:20px;border:1px solid var(--line);border-radius:14px;background:#fff}.settings-panel h2{margin:0 0 14px;font-size:16px}.settings-panel code{display:block;padding:12px;border-radius:8px;background:#f4f7fa;overflow-wrap:anywhere}.settings-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.settings-actions button{min-height:40px;padding:0 15px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}.settings-actions button:disabled{opacity:.55;cursor:not-allowed}.settings-header-preview{display:block;width:100%;max-width:800px;max-height:180px;object-fit:contain;border:1px solid var(--line);border-radius:8px}.settings-panel progress{width:100%;height:12px}

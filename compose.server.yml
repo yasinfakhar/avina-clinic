@@ -1,0 +1,69 @@
+name: avina-licensing
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: avina_license
+      POSTGRES_USER: avina_license
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avina_license -d avina_license"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  licensing:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      ADMIN_API_TOKEN_FILE: /run/secrets/admin_api_token
+      LICENSE_PRIVATE_KEY_FILE: /run/secrets/license_private_key
+      LICENSE_PUBLIC_KEY_FILE: /run/secrets/license_public_key
+      HOST: 0.0.0.0
+      PORT: 8787
+    secrets:
+      - database_url
+      - admin_api_token
+      - license_private_key
+      - license_public_key
+    ports:
+      - "127.0.0.1:8787:8787"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [backend]
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  database_url:
+    file: ./secrets/database_url.txt
+  admin_api_token:
+    file: ./secrets/admin_api_token.txt
+  license_private_key:
+    file: ./secrets/license-private.pem
+  license_public_key:
+    file: ./secrets/license-public.pem
+
+volumes:
+  postgres_data:
+
+networks:
+  backend:
+    internal: true

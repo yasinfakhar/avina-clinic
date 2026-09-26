@@ -21,11 +21,20 @@ export function getDb() {
 
   mkdirSync(storagePaths.images, { recursive: true });
   mkdirSync(storagePaths.pdfs, { recursive: true });
+  mkdirSync(path.join(storagePaths.root, "settings"), { recursive: true });
+  mkdirSync(path.join(storagePaths.root, "backups"), { recursive: true });
 
   const database = new DatabaseSync(storagePaths.database);
   database.exec("PRAGMA foreign_keys = ON");
-  database.exec("PRAGMA journal_mode = DELETE");
+  database.exec("PRAGMA journal_mode = WAL");
+  database.exec("PRAGMA synchronous = FULL");
   database.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id TEXT PRIMARY KEY,
+      version INTEGER NOT NULL,
+      checksum TEXT NOT NULL,
+      completed_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS records (
       id TEXT PRIMARY KEY,
       full_name TEXT NOT NULL DEFAULT '',
@@ -52,6 +61,15 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS files_record_id_idx ON files(record_id);
   `);
+
+  const integrity = database.prepare("PRAGMA integrity_check").get() as { integrity_check?: string } | undefined;
+  if (integrity?.integrity_check !== "ok") {
+    database.close();
+    throw new Error(`SQLite integrity check failed: ${integrity?.integrity_check || "unknown"}`);
+  }
+  database.prepare(`INSERT OR IGNORE INTO schema_migrations (id, version, checksum, completed_at)
+    VALUES ('0001-initial-storage', 1, 'builtin-v1', ?)`
+  ).run(Date.now());
 
   databaseGlobal.audiologyDatabase = database;
   return database;

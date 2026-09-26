@@ -54,6 +54,9 @@ export async function POST(request: Request) {
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage();
+    if (process.env.AUDIOLOGY_DESKTOP_TOKEN) {
+      await page.setExtraHTTPHeaders({ "x-audiology-desktop-token": process.env.AUDIOLOGY_DESKTOP_TOKEN });
+    }
     const reportUrl = new URL(request.url);
     reportUrl.pathname = "/";
     reportUrl.search = `?printRecord=${encodeURIComponent(recordId)}`;

@@ -14,8 +14,11 @@ test("initializes the SQLite database and backup directories", () => {
   const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all();
   assert.ok(tables.some((table) => table.name === "records"));
   assert.ok(tables.some((table) => table.name === "files"));
+  assert.ok(tables.some((table) => table.name === "schema_migrations"));
   assert.equal(existsSync(storagePaths.images), true);
   assert.equal(existsSync(storagePaths.pdfs), true);
+  assert.equal(existsSync(path.join(storagePaths.root, "settings")), true);
+  assert.equal(existsSync(path.join(storagePaths.root, "backups")), true);
   assert.equal(existsSync(storagePaths.database), true);
 });
 
