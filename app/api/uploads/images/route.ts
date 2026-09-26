@@ -2,6 +2,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getDb, storagePaths } from "@/db";
 import { otoscopyImageName, safeNationalId } from "./naming";
+import { requireSession } from "@/app/server/auth";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ const imageTypes: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
+  const denied = requireSession(request); if (denied) return denied;
   const form = await request.formData();
   const file = form.get("file");
   const recordId = String(form.get("recordId") || "");
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const denied = requireSession(request); if (denied) return denied;
   const params = new URL(request.url).searchParams;
   const recordId = params.get("recordId") || "";
   const side = params.get("side") || "";

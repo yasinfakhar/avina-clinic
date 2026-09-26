@@ -1,4 +1,5 @@
 import { getDb } from "@/db";
+import { requireSession } from "@/app/server/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,8 @@ type StoredRecord = {
   updatedAt?: string;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = requireSession(request); if (denied) return denied;
   const rows = getDb().prepare("SELECT data, updated_at FROM records ORDER BY updated_at DESC").all() as Array<{ data: string; updated_at: number }>;
   return Response.json({
     records: rows.map((row) => ({
@@ -23,6 +25,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const denied = requireSession(request); if (denied) return denied;
   const record = (await request.json()) as StoredRecord;
   const status = record.status;
   if (!record.id || !status || !["draft", "completed"].includes(status)) {

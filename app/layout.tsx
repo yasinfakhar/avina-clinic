@@ -1,11 +1,6 @@
 import type { Metadata } from "next";
-import { Vazirmatn } from "next/font/google";
+import "@fontsource-variable/vazirmatn";
 import "./globals.css";
-
-const vazirmatn = Vazirmatn({
-  variable: "--font-vazirmatn",
-  subsets: ["arabic", "latin"],
-});
 
 export const metadata: Metadata = {
   title: "سامانه مدیریت شنوایی‌سنجی",
@@ -27,7 +22,7 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body
-        className={`${vazirmatn.variable} antialiased`}
+        className="antialiased"
         suppressHydrationWarning
       >
         {children}

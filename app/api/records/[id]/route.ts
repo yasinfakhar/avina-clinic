@@ -1,10 +1,12 @@
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { getDb, storagePaths } from "@/db";
+import { requireSession } from "@/app/server/auth";
 
 export const runtime = "nodejs";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = requireSession(request); if (denied) return denied;
   const { id } = await context.params;
   const row = getDb().prepare("SELECT data, updated_at FROM records WHERE id = ?").get(id) as
     | { data: string; updated_at: number }
@@ -19,7 +21,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   });
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = requireSession(request); if (denied) return denied;
   const { id } = await context.params;
   const database = getDb();
   const files = database.prepare("SELECT category, stored_name FROM files WHERE record_id = ?").all(id) as Array<{ category: "image" | "pdf"; stored_name: string }>;

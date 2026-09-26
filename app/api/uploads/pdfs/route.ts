@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { getDb, storagePaths } from "@/db";
+import { requireSession } from "@/app/server/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ function safePart(value: string) {
 }
 
 export async function GET(request: Request) {
+  const denied = requireSession(request); if (denied) return denied;
   const recordId = new URL(request.url).searchParams.get("recordId");
   if (!recordId) return Response.json({ error: "recordId is required" }, { status: 400 });
   const files = getDb().prepare(`SELECT original_name AS originalName, stored_name AS storedName, size, created_at AS createdAt
@@ -18,6 +20,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireSession(request); if (denied) return denied;
   const form = await request.formData();
   const file = form.get("file");
   const recordId = String(form.get("recordId") || "");

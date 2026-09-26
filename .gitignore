@@ -42,3 +42,5 @@ next-env.d.ts
 /work/
 /data/
 /backups/
+/release/
+/electron/release-config.json

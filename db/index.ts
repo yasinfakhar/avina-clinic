@@ -11,6 +11,9 @@ export const storagePaths = {
   database: path.join(dataDirectory, "audiology.sqlite"),
   images: path.join(dataDirectory, "images"),
   pdfs: path.join(dataDirectory, "pdfs"),
+  header: path.join(dataDirectory, "header"),
+  logs: path.join(dataDirectory, "logs"),
+  license: path.join(dataDirectory, "license.json"),
 };
 
 type DatabaseGlobal = typeof globalThis & { audiologyDatabase?: DatabaseSync };
@@ -21,6 +24,8 @@ export function getDb() {
 
   mkdirSync(storagePaths.images, { recursive: true });
   mkdirSync(storagePaths.pdfs, { recursive: true });
+  mkdirSync(storagePaths.header, { recursive: true });
+  mkdirSync(storagePaths.logs, { recursive: true });
 
   const database = new DatabaseSync(storagePaths.database);
   database.exec("PRAGMA foreign_keys = ON");
@@ -61,7 +66,31 @@ export function getDb() {
       value TEXT PRIMARY KEY,
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      version INTEGER PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS admin_credentials (
+      username TEXT PRIMARY KEY CHECK (username = 'admin'),
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      must_change_password INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      token_hash TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS auth_sessions_expires_at_idx ON auth_sessions(expires_at);
   `);
+  database.prepare("INSERT OR IGNORE INTO app_migrations (version, applied_at) VALUES (1, ?)").run(Date.now());
   if (!hasOtoscopyResults) {
     const insertResult = database.prepare(
       "INSERT INTO otoscopy_results (value, created_at) VALUES (?, ?)",

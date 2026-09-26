@@ -85,8 +85,7 @@ type RecordItem = {
   updatedAt: string;
 };
 
-const LOGIN_SESSION_KEY = "audiology-login";
-const LOGIN_SESSION_VALUE = "admin-only-v1";
+type AppSettings = { audiologistName: string; headerUrl: string; onboardingComplete: boolean };
 
 const emptyRecord = (): RecordItem => ({
   id: `A-${Date.now().toString().slice(-6)}`,
@@ -564,7 +563,9 @@ function ActionButton({
 
 export default function Home() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [view, setView] = useState<"dashboard" | "wizard">("dashboard");
+  const [authMode, setAuthMode] = useState<"loading" | "login" | "onboarding" | "app">("loading");
+  const [settings, setSettings] = useState<AppSettings>({ audiologistName: "", headerUrl: "/header.png", onboardingComplete: false });
+  const [view, setView] = useState<"dashboard" | "wizard" | "settings">("dashboard");
   const [step, setStep] = useState(1);
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [current, setCurrent] = useState<RecordItem>(emptyRecord);
@@ -577,6 +578,18 @@ export default function Home() {
   const [otoscopyResults, setOtoscopyResults] = useState<string[]>([]);
 
   useEffect(() => {
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((state: { authenticated: boolean; onboardingRequired?: boolean; settings?: AppSettings }) => {
+        setLoggedIn(state.authenticated);
+        if (state.settings) setSettings(state.settings);
+        setAuthMode(!state.authenticated ? "login" : state.onboardingRequired ? "onboarding" : "app");
+      })
+      .catch(() => setAuthMode("login"));
+  }, []);
+
+  useEffect(() => {
+    if (!loggedIn || authMode !== "app") return;
     void fetch("/api/otoscopy-results", { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error();
@@ -584,9 +597,10 @@ export default function Home() {
       })
       .then(({ results }) => setOtoscopyResults(results))
       .catch(() => setToast("خواندن فهرست نتایج اتوسکوپی ناموفق بود"));
-  }, []);
+  }, [loggedIn, authMode]);
 
   useEffect(() => {
+    if (!loggedIn || authMode !== "app") return;
     let cancelled = false;
     const printRecordId = new URLSearchParams(window.location.search).get(
       "printRecord",
@@ -636,15 +650,10 @@ export default function Home() {
       }
     };
     void loadRecords();
-    startTransition(() =>
-      setLoggedIn(
-        sessionStorage.getItem(LOGIN_SESSION_KEY) === LOGIN_SESSION_VALUE,
-      ),
-    );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loggedIn, authMode]);
 
   useEffect(() => {
     if (!loggedIn || view !== "wizard" || current.status !== "draft") return;
@@ -753,12 +762,16 @@ export default function Home() {
       return;
     }
     try {
-      const response = await fetch("/api/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recordId: done.id }),
-      });
-      if (!response.ok) throw new Error();
+      if (window.desktop) {
+        await window.desktop.generateReport(done.id);
+      } else {
+        const response = await fetch("/api/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recordId: done.id }),
+        });
+        if (!response.ok) throw new Error();
+      }
       setView("dashboard");
       notify("تشخیص و فایل PDF با موفقیت ذخیره شدند");
     } catch {
@@ -785,15 +798,19 @@ export default function Home() {
       </main>
     );
 
-  if (!loggedIn)
+  if (authMode === "loading") return <main className="login-page" dir="rtl"><section className="login-card"><p>در حال آماده‌سازی برنامه…</p></section></main>;
+
+  if (!loggedIn || authMode === "login")
     return (
       <Login
-        onLogin={() => {
-          sessionStorage.setItem(LOGIN_SESSION_KEY, LOGIN_SESSION_VALUE);
+        onLogin={(onboardingRequired) => {
           setLoggedIn(true);
+          setAuthMode(onboardingRequired ? "onboarding" : "app");
         }}
       />
     );
+
+  if (authMode === "onboarding") return <Onboarding onComplete={() => { setLoggedIn(false); setAuthMode("login"); }} />;
 
   return (
     <main dir="rtl">
@@ -807,21 +824,23 @@ export default function Home() {
         <div className="profile">
           <span className="avatar">د</span>
           <div>
-            <strong>سمیرا محمدی </strong>
+            <strong>{settings.audiologistName || "شنوایی‌شناس"}</strong>
             <small>Audiologist</small>
           </div>
+          <button className="logout" title="تنظیمات" aria-label="تنظیمات" onClick={() => setView("settings")}><Icon name="edit" /></button>
           <button
             className="logout"
             onClick={() => {
-              sessionStorage.removeItem(LOGIN_SESSION_KEY);
-              setLoggedIn(false);
+              void fetch("/api/auth/logout", { method: "POST" }).finally(() => { setLoggedIn(false); setAuthMode("login"); });
             }}
           >
             <Icon name="logout" />
           </button>
         </div>
       </header>
-      {view === "dashboard" ? (
+      {view === "settings" ? (
+        <Settings settings={settings} onSettings={setSettings} onBack={() => setView("dashboard")} />
+      ) : view === "dashboard" ? (
         <section className="shell">
           <div className="hero-row">
             <div>
@@ -1026,18 +1045,105 @@ export default function Home() {
   );
 }
 
-function Login({ onLogin }: { onLogin: () => void }) {
+function Onboarding({ onComplete }: { onComplete: () => void }) {
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [header, setHeader] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setError("");
+    if (!header) return setError("تصویر سربرگ را انتخاب کنید.");
+    const form = new FormData(); form.set("name", name); form.set("password", password); form.set("passwordConfirmation", confirmation); form.set("header", header);
+    setSaving(true);
+    try {
+      const response = await fetch("/api/onboarding", { method: "POST", body: form });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error);
+      onComplete();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "ذخیره اطلاعات ناموفق بود."); }
+    finally { setSaving(false); }
+  };
+  return <main className="login-page" dir="rtl"><section className="login-card onboarding-card">
+    <h1>راه‌اندازی اولیه</h1><p>پیش از استفاده، مشخصات مدیر و سربرگ گزارش را ثبت کنید.</p>
+    <form onSubmit={submit}>
+      <label>نام شنوایی‌شناس<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <label>رمز عبور جدید<input required minLength={10} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+      <label>تکرار رمز عبور<input required minLength={10} type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
+      <label>تصویر سربرگ (دقیقاً ۲۱۷۱×۳۴۱ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
+      {error && <p className="login-error" role="alert">{error}</p>}
+      <button className="primary wide" disabled={saving}>{saving ? "در حال ذخیره…" : "تکمیل راه‌اندازی"}</button>
+    </form>
+  </section></main>;
+}
+
+function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onSettings: (settings: AppSettings) => void; onBack: () => void }) {
+  const [name, setName] = useState(settings.audiologistName);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [updateState, setUpdateState] = useState("آماده بررسی");
+  const [desktopInfo, setDesktopInfo] = useState<{ version?: string; licenseId?: string; deviceId?: string }>({});
+  useEffect(() => {
+    const dispose = window.desktop?.onUpdateStatus((status) => setUpdateState(status.state));
+    if (window.desktop) void Promise.all([window.desktop.appVersion(), window.desktop.licenseStatus()]).then(([version, license]) => setDesktopInfo({ version, licenseId: license.licenseId, deviceId: license.deviceId }));
+    return dispose;
+  }, []);
+  const saveName = async () => {
+    const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiologistName: name }) });
+    const body = await response.json() as AppSettings & { error?: string }; if (!response.ok) return setMessage(body.error || "ذخیره ناموفق بود."); onSettings(body); setMessage("تنظیمات ذخیره شد.");
+  };
+  const uploadHeader = async (file?: File) => {
+    if (!file) return; const form = new FormData(); form.set("header", file);
+    const response = await fetch("/api/settings/header", { method: "POST", body: form }); const body = await response.json() as { headerUrl?: string; error?: string };
+    if (!response.ok) return setMessage(body.error || "بارگذاری ناموفق بود."); onSettings({ ...settings, headerUrl: body.headerUrl || settings.headerUrl }); setMessage("سربرگ ذخیره شد.");
+  };
+  const changePassword = async () => {
+    const response = await fetch("/api/settings/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) }); const body = await response.json() as { error?: string };
+    if (!response.ok) return setMessage(body.error || "تغییر رمز ناموفق بود."); setMessage("رمز تغییر کرد؛ لطفاً دوباره وارد شوید."); setTimeout(() => location.reload(), 1000);
+  };
+  return <section className="shell settings-page" dir="rtl">
+    <div className="hero-row"><div><p className="eyebrow">مدیریت برنامه</p><h1>تنظیمات</h1></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
+    <div className="settings-grid">
+      <article className="form-card"><h2>مشخصات و سربرگ</h2><label>نام شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><button className="primary" onClick={saveName}>ذخیره نام</button><label>سربرگ ۲۱۷۱×۳۴۱<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ" /></article>
+      <article className="form-card"><h2>تغییر رمز عبور</h2><label>رمز فعلی<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></label><label>رمز جدید<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></label><button className="primary" onClick={changePassword}>تغییر رمز</button></article>
+      <article className="form-card"><h2>مجوز و به‌روزرسانی</h2><p>نسخه: {desktopInfo.version || "نسخه وب"}</p>{desktopInfo.licenseId && <p dir="ltr">License: {desktopInfo.licenseId}<br />Device: {desktopInfo.deviceId}</p>}<p>وضعیت: {updateState}</p><button className="primary" disabled={typeof window === "undefined" || !window.desktop} onClick={() => void window.desktop?.checkForUpdates()}>بررسی به‌روزرسانی</button>{updateState === "ready" && <button className="secondary" onClick={() => window.desktop?.installUpdate()}>نصب و راه‌اندازی مجدد</button>}</article>
+    </div>{message && <div className="toast">{message}</div>}
+  </section>;
+}
+
+function Login({ onLogin }: { onLogin: (onboardingRequired: boolean) => void }) {
   const [show, setShow] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (username === "admin" && password === "samisami") {
-      onLogin();
-      return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
+      const body = await response.json() as { onboardingRequired?: boolean };
+      if (!response.ok) throw new Error();
+      onLogin(Boolean(body.onboardingRequired));
+    } catch {
+      setError("نام کاربری یا رمز عبور اشتباه است.");
+    } finally {
+      setSubmitting(false);
     }
-    setError("نام کاربری یا رمز عبور اشتباه است.");
+  };
+  const recover = async () => {
+    setSubmitting(true); setError("");
+    try {
+      const response = await fetch("/api/auth/recovery", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: recoveryCode, newPassword: recoveryPassword }) });
+      const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(body.error);
+      setRecovering(false); setError("رمز عبور تغییر کرد. اکنون وارد شوید.");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "بازیابی ناموفق بود."); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -1091,9 +1197,10 @@ function Login({ onLogin }: { onLogin: () => void }) {
             <label>
               <input type="checkbox" /> مرا به خاطر بسپار
             </label>
-            <a href="#">فراموشی رمز عبور</a>
+            <button type="button" className="link-button" onClick={() => setRecovering(!recovering)}>فراموشی رمز عبور</button>
           </div>
-          <button className="primary wide">ورود به سامانه</button>
+          {recovering && <div className="recovery-box"><label>کد بازیابی<input value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} /></label><label>رمز جدید<input type="password" minLength={10} value={recoveryPassword} onChange={(e) => setRecoveryPassword(e.target.value)} /></label><button type="button" className="secondary wide" disabled={submitting} onClick={() => void recover()}>ثبت رمز جدید</button></div>}
+          <button className="primary wide" disabled={submitting}>{submitting ? "در حال ورود…" : "ورود به سامانه"}</button>
         </form>
         <small>نسخه ۱.۰ · سامانه تخصصی کلینیک شنوایی</small>
       </section>
@@ -1766,7 +1873,7 @@ function ReportPage({
       <header className="print-header">
         <img
           className="print-letterhead"
-          src="/header.png"
+          src="/api/settings/header"
           alt="سربرگ کلینیک شنوایی"
         />
         <span className="print-visit-date" dir="rtl">

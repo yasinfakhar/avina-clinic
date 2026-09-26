@@ -3,6 +3,7 @@ import path from "node:path";
 import puppeteer from "puppeteer-core";
 import { getDb, storagePaths } from "@/db";
 import { tehranDateFilePart } from "@/app/tehran-time";
+import { requireSession } from "@/app/server/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ function safeFilePart(value: string) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireSession(request); if (denied) return denied;
   const { recordId } = (await request.json()) as { recordId?: string };
   if (!recordId) {
     return Response.json({ error: "recordId is required" }, { status: 400 });
