@@ -25,6 +25,11 @@ export function getDb() {
   const database = new DatabaseSync(storagePaths.database);
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA journal_mode = DELETE");
+  const hasOtoscopyResults = Boolean(
+    database
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'otoscopy_results'")
+      .get(),
+  );
   database.exec(`
     CREATE TABLE IF NOT EXISTS records (
       id TEXT PRIMARY KEY,
@@ -51,7 +56,19 @@ export function getDb() {
       FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS files_record_id_idx ON files(record_id);
+
+    CREATE TABLE IF NOT EXISTS otoscopy_results (
+      value TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    );
   `);
+  if (!hasOtoscopyResults) {
+    const insertResult = database.prepare(
+      "INSERT INTO otoscopy_results (value, created_at) VALUES (?, ?)",
+    );
+    insertResult.run("Normal TM", Date.now());
+    insertResult.run("O4", Date.now() + 1);
+  }
 
   databaseGlobal.audiologyDatabase = database;
   return database;

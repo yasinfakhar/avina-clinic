@@ -574,6 +574,17 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [printRecord, setPrintRecord] = useState<RecordItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [otoscopyResults, setOtoscopyResults] = useState<string[]>([]);
+
+  useEffect(() => {
+    void fetch("/api/otoscopy-results", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        return response.json() as Promise<{ results: string[] }>;
+      })
+      .then(({ results }) => setOtoscopyResults(results))
+      .catch(() => setToast("خواندن فهرست نتایج اتوسکوپی ناموفق بود"));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -682,6 +693,34 @@ export default function Home() {
   const notify = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(""), 2600);
+  };
+  const saveOtoscopyResult = (rawValue: string) => {
+    const value = rawValue.trim();
+    if (!value || otoscopyResults.includes(value)) return;
+    void fetch("/api/otoscopy-results", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        setOtoscopyResults((previous) =>
+          previous.includes(value) ? previous : [...previous, value],
+        );
+      })
+      .catch(() => notify("ذخیره نتیجه اتوسکوپی در فهرست ناموفق بود"));
+  };
+  const deleteOtoscopyResult = (value: string) => {
+    void fetch(`/api/otoscopy-results?value=${encodeURIComponent(value)}`, {
+      method: "DELETE",
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        setOtoscopyResults((previous) =>
+          previous.filter((item) => item !== value),
+        );
+      })
+      .catch(() => notify("حذف نتیجه اتوسکوپی از فهرست ناموفق بود"));
   };
   const openNew = () => {
     setCurrent(emptyRecord());
@@ -976,6 +1015,9 @@ export default function Home() {
           onSave={save}
           saving={saving}
           notify={notify}
+          otoscopyResults={otoscopyResults}
+          onSaveOtoscopyResult={saveOtoscopyResult}
+          onDeleteOtoscopyResult={deleteOtoscopyResult}
         />
       )}
       <PrintReport record={current} />
@@ -1068,6 +1110,9 @@ function Wizard({
   onSave,
   saving,
   notify,
+  otoscopyResults,
+  onSaveOtoscopyResult,
+  onDeleteOtoscopyResult,
 }: {
   step: number;
   setStep: (n: number) => void;
@@ -1077,6 +1122,9 @@ function Wizard({
   onSave: () => void;
   saving: boolean;
   notify: (s: string) => void;
+  otoscopyResults: string[];
+  onSaveOtoscopyResult: (value: string) => void;
+  onDeleteOtoscopyResult: (value: string) => void;
 }) {
   const [annotatingSide, setAnnotatingSide] = useState<"right" | "left" | null>(
     null,
@@ -1372,7 +1420,9 @@ function Wizard({
                         value={record[side].result}
                         onChange={(v) => updateEar(side, { result: v })}
                         placeholder="نتیجه معاینه را تایپ کنید..."
-                        suggestions={["Normal TM", "O4"]}
+                        suggestions={otoscopyResults}
+                        onSaveSuggestion={onSaveOtoscopyResult}
+                        onDeleteSuggestion={onDeleteOtoscopyResult}
                       />
                     </label>
                   </div>
@@ -2175,11 +2225,11 @@ function RecordSummary({ record }: { record: RecordItem }) {
           </div>
         </header>
         <dl className="summary-details">
-          <div>
+          <div className="patient-name-field">
             <dt>Full Name</dt>
             <dd dir="auto">{valueOrDash(record.fullName)}</dd>
           </div>
-          <div>
+          <div className="patient-name-field">
             <dt>Referred Doctor</dt>
             <dd dir="auto">{valueOrDash(record.doctorName)}</dd>
           </div>

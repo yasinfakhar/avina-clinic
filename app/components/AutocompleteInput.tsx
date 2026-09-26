@@ -7,6 +7,8 @@ interface AutocompleteInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   suggestions?: string[];
+  onSaveSuggestion?: (value: string) => void;
+  onDeleteSuggestion?: (value: string) => void;
 }
 
 export function AutocompleteInput({
@@ -14,10 +16,13 @@ export function AutocompleteInput({
   onChange,
   placeholder = "تایپ کنید...",
   suggestions = [],
+  onSaveSuggestion,
+  onDeleteSuggestion,
 }: AutocompleteInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectingSuggestionRef = useRef(false);
 
   const uniqueSuggestions = [...new Set(suggestions)];
   const filteredSuggestions = value
@@ -48,6 +53,8 @@ export function AutocompleteInput({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
+      e.preventDefault();
+      onSaveSuggestion?.(value.trim());
       setIsOpen(false);
     } else if (e.key === "Escape") {
       setIsOpen(false);
@@ -55,6 +62,11 @@ export function AutocompleteInput({
   };
 
   const handleBlur = () => {
+    if (selectingSuggestionRef.current) {
+      selectingSuggestionRef.current = false;
+    } else {
+      onSaveSuggestion?.(value.trim());
+    }
     // Delay to allow click on suggestion
     setTimeout(() => {
       setIsOpen(false);
@@ -105,6 +117,9 @@ export function AutocompleteInput({
           {filteredSuggestions.map((suggestion, index) => (
             <li
               key={`${suggestion}-${index}`}
+              onMouseDown={() => {
+                selectingSuggestionRef.current = true;
+              }}
               onClick={() => handleSelect(suggestion)}
               style={{
                 padding: "8px 12px",
@@ -118,7 +133,38 @@ export function AutocompleteInput({
                 e.currentTarget.style.backgroundColor = "white";
               }}
             >
-              {suggestion}
+              <span>{suggestion}</span>
+              {onDeleteSuggestion && (
+                <button
+                  type="button"
+                  className="autocomplete-delete"
+                  aria-label={`حذف ${suggestion} از فهرست`}
+                  title="حذف از فهرست"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteSuggestion(suggestion);
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4 7h16" />
+                    <path d="M9 7V4h6v3" />
+                    <path d="m6 7 1 13h10l1-13" />
+                    <path d="M10 11v5M14 11v5" />
+                  </svg>
+                </button>
+              )}
             </li>
           ))}
         </ul>

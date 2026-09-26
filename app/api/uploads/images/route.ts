@@ -1,6 +1,7 @@
 import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getDb, storagePaths } from "@/db";
+import { otoscopyImageName, safeNationalId } from "./naming";
 
 export const runtime = "nodejs";
 
@@ -9,10 +10,6 @@ const imageTypes: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
 };
-
-function safePart(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
-}
 
 export async function POST(request: Request) {
   const form = await request.formData();
@@ -30,11 +27,26 @@ export async function POST(request: Request) {
   }
 
   const database = getDb();
+  const patient = database
+    .prepare("SELECT national_id FROM records WHERE id = ?")
+    .get(recordId) as { national_id: string } | undefined;
+  if (!patient || !safeNationalId(patient.national_id)) {
+    return Response.json(
+      { error: "Patient national ID is required before uploading an image" },
+      { status: 400 },
+    );
+  }
+
   const slot = `${side}-${variant}`;
   const previous = database.prepare("SELECT stored_name FROM files WHERE record_id = ? AND category = 'image' AND slot = ?").get(recordId, slot) as { stored_name: string } | undefined;
   if (previous) rmSync(path.join(storagePaths.images, previous.stored_name), { force: true });
 
-  const storedName = `${safePart(recordId)}-${slot}-${Date.now()}${extension}`;
+  const storedName = otoscopyImageName(
+    patient.national_id,
+    side as "left" | "right",
+    variant as "current" | "original",
+    extension,
+  );
   writeFileSync(path.join(storagePaths.images, storedName), Buffer.from(await file.arrayBuffer()));
   database.prepare("DELETE FROM files WHERE record_id = ? AND category = 'image' AND slot = ?").run(recordId, slot);
   database.prepare(`INSERT INTO files (record_id, category, slot, stored_name, original_name, mime_type, size, created_at)
