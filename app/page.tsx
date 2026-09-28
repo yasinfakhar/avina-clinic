@@ -77,6 +77,7 @@ type RecordItem = {
   doctorName: string;
   fullName: string;
   nationalId: string;
+  phoneNumber: string;
   gender: Gender;
   birthDate: string;
   right: Ear;
@@ -86,7 +87,7 @@ type RecordItem = {
   updatedAt: string;
 };
 
-type AppSettings = { audiologistName: string; headerUrl: string; onboardingComplete: boolean };
+type AppSettings = { audiologistName: string; printThemeColor: string; headerUrl: string; onboardingComplete: boolean };
 type ReleaseNotes = { version: string; changelog: string; update_date: string; url: string };
 
 function MarkdownChangelog({ value }: { value: string }) {
@@ -104,6 +105,7 @@ const emptyRecord = (): RecordItem => ({
   doctorName: "",
   fullName: "",
   nationalId: "",
+  phoneNumber: "",
   gender: "",
   birthDate: "",
   right: {
@@ -602,7 +604,7 @@ function ActionButton({
 export default function Home() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"loading" | "login" | "onboarding" | "app">("loading");
-  const [settings, setSettings] = useState<AppSettings>({ audiologistName: "", headerUrl: "/header.png", onboardingComplete: false });
+  const [settings, setSettings] = useState<AppSettings>({ audiologistName: "", printThemeColor: "#5F7DC9", headerUrl: "/header.png", onboardingComplete: false });
   const [view, setView] = useState<"dashboard" | "wizard" | "settings">("dashboard");
   const [step, setStep] = useState(1);
   const [records, setRecords] = useState<RecordItem[]>([]);
@@ -688,6 +690,7 @@ export default function Home() {
               await migrateBrowserRecord({
                 ...record,
                 doctorName: record.doctorName || fileName || "",
+                phoneNumber: record.phoneNumber || "",
                 gender: record.gender || "",
               }),
             );
@@ -699,7 +702,16 @@ export default function Home() {
         const response = await fetch("/api/records", { cache: "no-store" });
         if (!response.ok) throw new Error();
         const data = (await response.json()) as { records: RecordItem[] };
-        if (!cancelled) startTransition(() => setRecords(data.records));
+        if (!cancelled) {
+          startTransition(() =>
+            setRecords(
+              data.records.map((record) => ({
+                ...record,
+                phoneNumber: record.phoneNumber || "",
+              })),
+            ),
+          );
+        }
       } catch {
         if (!cancelled) setToast("خواندن اطلاعات از دیتابیس ناموفق بود");
       }
@@ -744,7 +756,7 @@ export default function Home() {
       return records.filter((record) => {
         const updatedDate = tehranDateFilePart(record.updatedAt);
         return (
-          `${record.fullName} ${record.nationalId} ${record.doctorName}`.includes(
+          `${record.fullName} ${record.nationalId} ${record.phoneNumber || ""} ${record.doctorName}`.includes(
             query,
           ) &&
           (!start || updatedDate >= start) &&
@@ -849,7 +861,7 @@ export default function Home() {
   if (printRecord)
     return (
       <main className="print-report-ready">
-        <PrintReport record={printRecord} headerUrl={settings.headerUrl} />
+        <PrintReport record={printRecord} headerUrl={settings.headerUrl} themeColor={settings.printThemeColor} />
       </main>
     );
 
@@ -1110,7 +1122,7 @@ export default function Home() {
           onDeleteOtoscopyResult={deleteOtoscopyResult}
         />
       )}
-      <PrintReport record={current} headerUrl={settings.headerUrl} />
+      <PrintReport record={current} headerUrl={settings.headerUrl} themeColor={settings.printThemeColor} />
       {toast && <div className="toast">{toast}</div>}
     </main>
   );
@@ -1142,7 +1154,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
       <label>نام و نام خانوادگی شنوایی‌شناس<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
       <label>رمز عبور جدید<input required minLength={10} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
       <label>تکرار رمز عبور<input required minLength={10} type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
-      <label>تصویر سربرگ (دقیقاً ۲۱۷۱×۳۴۱ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
+      <label>تصویر سربرگ (دقیقاً ۲۱۷۰×۲۳۰ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
       {error && <p className="login-error" role="alert">{error}</p>}
       <button className="primary wide" disabled={saving}>{saving ? "در حال ذخیره…" : "تکمیل راه‌اندازی"}</button>
     </form>
@@ -1151,6 +1163,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
 
 function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onSettings: (settings: AppSettings) => void; onBack: () => void }) {
   const [name, setName] = useState(settings.audiologistName);
+  const [themeColor, setThemeColor] = useState(settings.printThemeColor);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirmation, setNewPasswordConfirmation] = useState("");
@@ -1166,7 +1179,7 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
     return dispose;
   }, []);
   const saveName = async () => {
-    const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiologistName: name }) });
+    const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiologistName: name, printThemeColor: themeColor }) });
     const body = await response.json() as AppSettings & { error?: string }; if (!response.ok) return setMessage(body.error || "ذخیره ناموفق بود."); onSettings(body); setMessage("تنظیمات ذخیره شد.");
   };
   const uploadHeader = async (file?: File) => {
@@ -1182,7 +1195,7 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
   return <section className="shell settings-page" dir="rtl">
     <div className="hero-row"><div><p className="eyebrow">مدیریت برنامه</p><h1>تنظیمات</h1></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
     <div className="settings-grid">
-      <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><button className="primary" onClick={saveName}>ذخیره نام</button><label>تصویر سربرگ چاپ (۲۱۷۱×۳۴۱ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
+      <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>تم رنگی چاپ و PDF<div className="theme-color-field"><input type="color" value={/^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : "#5F7DC9"} onChange={(e) => setThemeColor(e.target.value.toUpperCase())} aria-label="انتخاب تم رنگی" /><input dir="ltr" value={themeColor} maxLength={7} placeholder="#5F7DC9" pattern="#[0-9A-Fa-f]{6}" onChange={(e) => setThemeColor(e.target.value)} aria-label="کد تم رنگی" /></div><small>کد رنگ را به شکل #RRGGBB وارد کنید. رنگ‌های پزشکی گوش راست و چپ تغییر نمی‌کنند.</small></label><button className="primary" onClick={saveName}>ذخیره مشخصات و تم رنگی</button><label>تصویر سربرگ چاپ (۲۱۷۰×۲۳۰ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
       <article className="form-card"><h2>تغییر رمز عبور</h2>
         <label>رمز فعلی<div className="password"><input required autoComplete="current-password" type={visiblePasswords.current ? "text" : "password"} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.current ? "پنهان کردن رمز فعلی" : "نمایش رمز فعلی"} onClick={() => setVisiblePasswords((state) => ({ ...state, current: !state.current }))}><Icon name="eye" /></button></div></label>
         <label>رمز جدید<div className="password"><input required minLength={10} autoComplete="new-password" type={visiblePasswords.new ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.new ? "پنهان کردن رمز جدید" : "نمایش رمز جدید"} onClick={() => setVisiblePasswords((state) => ({ ...state, new: !state.new }))}><Icon name="eye" /></button></div></label>
@@ -1372,6 +1385,7 @@ function Wizard({
     (record.doctorName &&
       record.fullName &&
       record.nationalId &&
+      record.phoneNumber &&
       record.birthDate &&
       record.gender);
   const handleImageUpload = async (
@@ -1515,6 +1529,19 @@ function Wizard({
                     value={record.nationalId}
                     onChange={(e) => update("nationalId", e.target.value)}
                     placeholder="۱۰ رقم"
+                  />
+                </label>
+                <label>
+                  <span>
+                    Phone Number <b>*</b>
+                  </span>
+                  <input
+                    className="ltr"
+                    type="tel"
+                    inputMode="tel"
+                    value={record.phoneNumber}
+                    onChange={(e) => update("phoneNumber", e.target.value)}
+                    placeholder="شماره تماس بیمار"
                   />
                 </label>
                 <label>
@@ -1790,6 +1817,10 @@ function Wizard({
                   <div>
                     <dt>National ID</dt>
                     <dd>{record.nationalId || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Phone Number</dt>
+                    <dd dir="ltr">{record.phoneNumber || "—"}</dd>
                   </div>
                   <div>
                     <dt>Gender</dt>
@@ -2189,7 +2220,7 @@ function PrintComments({
   );
 }
 
-function PrintReport({ record, headerUrl }: { record: RecordItem; headerUrl: string }) {
+function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; headerUrl: string; themeColor: string }) {
   const sides = ["right", "left"] as const;
   const tests = normalizeAudiometricTests(record.audiometricTests);
   const tympanometryDoctor =
@@ -2237,7 +2268,7 @@ function PrintReport({ record, headerUrl }: { record: RecordItem; headerUrl: str
     hasText(tests.dearDoctor);
 
   return (
-    <div className="print-report">
+    <div className="print-report" style={{ "--print-theme": themeColor } as React.CSSProperties}>
       {(sides.some(hasTympanometry) ||
         sides.some(hasOtoscopy) ||
         hasText(tympanometryDoctor) ||
@@ -2441,6 +2472,10 @@ function RecordSummary({ record }: { record: RecordItem }) {
             <dd className="national-id" dir="ltr">
               {valueOrDash(record.nationalId)}
             </dd>
+          </div>
+          <div>
+            <dt>Phone Number</dt>
+            <dd dir="ltr">{valueOrDash(record.phoneNumber)}</dd>
           </div>
           <div>
             <dt>Gender</dt>

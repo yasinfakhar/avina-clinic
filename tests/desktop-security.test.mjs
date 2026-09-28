@@ -12,12 +12,14 @@ function signedToken(payload, privateKey) {
   return `${header}.${body}.${signature}`;
 }
 
-test("accepts only structurally valid 2171x341 header images", () => {
-  const valid = readFileSync(new URL("../public/header.png", import.meta.url));
+test("accepts only structurally valid 2170x230 header images", () => {
+  const valid = Buffer.from(readFileSync(new URL("../public/header.png", import.meta.url)));
+  valid.writeUInt32BE(2170, 16);
+  valid.writeUInt32BE(230, 20);
   assert.equal(validateHeaderImage(valid, "image/png").extension, ".png");
   assert.throws(() => validateHeaderImage(valid, "image/jpeg"), /معتبر نیست/);
   const wrongSize = Buffer.from(valid); wrongSize.writeUInt32BE(100, 16); wrongSize.writeUInt32BE(100, 20);
-  assert.throws(() => validateHeaderImage(wrongSize, "image/png"), /۲۱۷۱×۳۴۱/);
+  assert.throws(() => validateHeaderImage(wrongSize, "image/png"), /۲۱۷۰×۲۳۰/);
   assert.throws(() => validateHeaderImage(Buffer.from("not an image"), "image/png"), /معتبر نیست/);
 });
 

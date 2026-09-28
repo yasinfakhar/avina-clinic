@@ -3,7 +3,7 @@
   "productName": "Avina Audiology",
   "description": "Offline desktop management system for an audiology clinic",
   "author": "Avina Audiology",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "main": "electron/main.mjs",
   "engines": {
