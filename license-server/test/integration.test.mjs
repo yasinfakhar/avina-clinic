@@ -46,9 +46,12 @@ test("creates, binds, recovers, resets, and revokes a license", async () => {
 
 test("publishes semantic versions and exposes the public update catalog", async () => {
   await waitForServer();
-  for (const [name, contents] of [["latest.yml", "version: 1.1.0"], ["Avina-Audiology-Setup-1.1.0.exe", "fake installer"]]) {
-    const uploaded = await api(`/admin/update-files/${name}`, { method: "PUT", headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/octet-stream" }, body: contents });
-    assert.equal(uploaded.response.status, 201);
+  for (const [name, chunks] of [["latest.yml", ["version: 1.1.0"]], ["Avina-Audiology-Setup-1.1.0.exe", ["fake ", "installer"]]]) {
+    let offset = 0; const total = chunks.join("").length;
+    for (const contents of chunks) {
+      const uploaded = await api(`/admin/update-files/${name}`, { method: "PUT", headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/octet-stream", "X-Upload-Offset": String(offset), "X-Upload-Total": String(total) }, body: contents });
+      offset += contents.length; assert.equal(uploaded.response.status, offset === total ? 201 : 202);
+    }
   }
   const first = await api("/admin/releases", { method: "POST", headers: adminHeaders, body: JSON.stringify({ version: "1.1.0", changelog: "## تغییرات\n- نسخه آزمایشی" }) });
   assert.equal(first.response.status, 201);

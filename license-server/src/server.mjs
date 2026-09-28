@@ -168,11 +168,27 @@ async function handleAdmin(request, response, url) {
     const name = decodeURIComponent(upload[1]);
     if (!/^[A-Za-z0-9._ -]+$/.test(name) || !(name === "latest.yml" || name.endsWith(".exe") || name.endsWith(".blockmap"))) return json(response, 400, { error: "Invalid update file" });
     const declared = Number(request.headers["content-length"] || 0);
-    if (!declared || declared > 2 * 1024 * 1024 * 1024) return json(response, 413, { error: "Invalid file size" });
-    const target = path.join(updateDirectory, name); const temporary = `${target}.${randomBytes(8).toString("hex")}.tmp`;
-    try { await pipeline(request, createWriteStream(temporary, { mode: 0o644 })); renameSync(temporary, target); }
-    catch (error) { rmSync(temporary, { force: true }); throw error; }
-    return json(response, 201, { uploaded: true, name, size: statSync(target).size });
+    const offsetHeader = request.headers["x-upload-offset"];
+    const totalHeader = request.headers["x-upload-total"];
+    const chunked = offsetHeader !== undefined || totalHeader !== undefined;
+    const offset = Number(offsetHeader || 0); const total = Number(totalHeader || declared);
+    if (!declared || declared > 32 * 1024 * 1024 || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(total) || total <= 0 || total > 2 * 1024 * 1024 * 1024 || offset + declared > total) return json(response, 413, { error: "Invalid file size or chunk" });
+    const target = path.join(updateDirectory, name);
+    if (!chunked) {
+      const temporary = `${target}.${randomBytes(8).toString("hex")}.tmp`;
+      try { await pipeline(request, createWriteStream(temporary, { mode: 0o644 })); renameSync(temporary, target); }
+      catch (error) { rmSync(temporary, { force: true }); throw error; }
+      return json(response, 201, { uploaded: true, complete: true, name, size: statSync(target).size });
+    }
+    const temporary = `${target}.upload`;
+    const received = existsSync(temporary) ? statSync(temporary).size : 0;
+    if (offset === 0) rmSync(temporary, { force: true });
+    else if (received !== offset) return json(response, 409, { error: "Chunk offset mismatch", received });
+    try { await pipeline(request, createWriteStream(temporary, { flags: offset === 0 ? "w" : "a", mode: 0o644 })); }
+    catch (error) { if (offset === 0) rmSync(temporary, { force: true }); throw error; }
+    const size = statSync(temporary).size; const complete = size === total;
+    if (complete) renameSync(temporary, target);
+    return json(response, complete ? 201 : 202, { uploaded: complete, complete, name, size, total });
   }
   if (request.method === "POST" && url.pathname === "/admin/licenses") {
     const input = await body(request); const key = newLicenseKey(); const licenseId = id("lic"); const now = Date.now();
