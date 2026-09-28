@@ -21,8 +21,9 @@ execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build:de
 
 const source = path.resolve("release");
 const destination = path.resolve("windows");
-const files = readdirSync(source).filter((name) => name === "latest.yml" || name.endsWith(".exe") || name.endsWith(".blockmap"));
-if (!files.includes("latest.yml") || !files.some((name) => name.endsWith(".exe"))) {
+const installer = `Avina-Audiology-Setup-${requestedVersion}.exe`;
+const files = ["latest.yml", installer, `${installer}.blockmap`];
+if (files.some((name) => !existsSync(path.join(source, name)))) {
   throw new Error("electron-builder did not produce latest.yml and a Windows installer");
 }
 mkdirSync(destination, { recursive: true });
