@@ -43,4 +43,6 @@ next-env.d.ts
 /data/
 /backups/
 /release/
+/windows/
 /electron/release-config.json
+/.certificates/

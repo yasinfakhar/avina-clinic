@@ -37,6 +37,11 @@ const runtimePackages = readdirSync(runtimeModules, { withFileTypes: true }).fla
 });
 for (const packageName of runtimePackages) copyCompleteRuntimePackage(packageName);
 
+// pnpm leaves absolute helper symlinks under .pnpm/node_modules in Next's
+// traced output. All top-level runtime packages above are now fully hydrated,
+// so this metadata is unnecessary and broken once packaged on another path.
+rmSync(path.join(runtimeModules, ".pnpm"), { recursive: true, force: true });
+
 const requiredRuntimeFiles = [
   "@swc/helpers/package.json",
   "@swc/helpers/cjs/_interop_require_default.cjs",

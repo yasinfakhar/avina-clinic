@@ -78,6 +78,8 @@ npm run build:desktop:dir
 
 برای ساخت NSIS امضاشده، متغیرهای زیر الزامی‌اند و دو URL باید HTTPS باشند:
 
+ابتدا `.env.desktop.example` را به `.env.desktop` کپی و مقادیر آن را تکمیل کنید. دستور `npm run release:windows -- x.y.z` این فایل را به‌صورت خودکار بارگذاری می‌کند.
+
 - `INITIAL_ADMIN_PASSWORD`
 - `LICENSE_SERVICE_URL`
 - `LICENSE_PUBLIC_KEY` (کلید عمومی Ed25519 با قالب PEM)

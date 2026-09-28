@@ -2,6 +2,12 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 
+if (existsSync(path.resolve(".env.desktop"))) process.loadEnvFile(path.resolve(".env.desktop"));
+const compatibilityLibraries = path.resolve(".certificates", "libssl11");
+if (existsSync(path.join(compatibilityLibraries, "libcrypto.so.1.1"))) {
+  process.env.LD_LIBRARY_PATH = [compatibilityLibraries, process.env.LD_LIBRARY_PATH].filter(Boolean).join(path.delimiter);
+}
+
 const requestedVersion = process.argv[2];
 if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(requestedVersion || "")) {
   throw new Error("Usage: npm run release:windows -- x.y.z");
