@@ -15,6 +15,8 @@ const applicationRoot = path.resolve(electronDirectory, "..");
 const dataDirectory = path.join(app.getPath("userData"), "data");
 const logDirectory = path.join(dataDirectory, "logs");
 const startupLog = path.join(logDirectory, "desktop.log");
+const acknowledgedReleaseFile = path.join(dataDirectory, "acknowledged-release.json");
+const pendingReleaseFile = path.join(dataDirectory, "pending-release.json");
 mkdirSync(logDirectory, { recursive: true });
 function log(message, error) {
   const detail = error instanceof Error ? `${error.stack || error.message}` : error ? String(error) : "";
@@ -180,8 +182,25 @@ ipcMain.handle("update:check", async () => {
   if (!app.isPackaged) return sendUpdate("development");
   if (!/^https:\/\//i.test(updateBaseUrl)) throw new Error("Update URL is not configured securely");
   const catalog = await fetchReleaseCatalog();
+  if (catalog.latest?.version && catalog.latest.version !== app.getVersion()) writeFileSync(pendingReleaseFile, JSON.stringify(catalog.latest), { mode: 0o600 });
   sendUpdate("catalog", { currentVersion: app.getVersion(), latest: catalog.latest, releases: catalog.releases });
   await autoUpdater.checkForUpdates();
+});
+ipcMain.handle("update:release-notes", async () => {
+  try {
+    const release = JSON.parse(readFileSync(pendingReleaseFile, "utf8"));
+    if (release.version !== app.getVersion() || typeof release.changelog !== "string") return null;
+    const acknowledged = JSON.parse(readFileSync(acknowledgedReleaseFile, "utf8"));
+    if (acknowledged.version === app.getVersion()) return null;
+    return release;
+  } catch {}
+  return null;
+});
+ipcMain.handle("update:acknowledge-release", (_event, version) => {
+  if (version !== app.getVersion()) throw new Error("Invalid release version");
+  writeFileSync(acknowledgedReleaseFile, JSON.stringify({ version, acknowledgedAt: new Date().toISOString() }), { mode: 0o600 });
+  rmSync(pendingReleaseFile, { force: true });
+  return true;
 });
 ipcMain.on("update:install", () => { quittingForUpdate = true; autoUpdater.quitAndInstall(false, true); });
 ipcMain.handle("report:generate", (_event, recordId) => generateReport(recordId));

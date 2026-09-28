@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("desktop", {
   appVersion: () => ipcRenderer.invoke("app:version"),
   licenseStatus: () => ipcRenderer.invoke("license:status"),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  releaseNotes: () => ipcRenderer.invoke("update:release-notes"),
+  acknowledgeRelease: (version) => ipcRenderer.invoke("update:acknowledge-release", version),
   installUpdate: () => ipcRenderer.send("update:install"),
   generateReport: (recordId) => ipcRenderer.invoke("report:generate", recordId),
   generateAndOpenReport: (recordId) => ipcRenderer.invoke("report:generate-open", recordId),

@@ -87,6 +87,17 @@ type RecordItem = {
 };
 
 type AppSettings = { audiologistName: string; headerUrl: string; onboardingComplete: boolean };
+type ReleaseNotes = { version: string; changelog: string; update_date: string; url: string };
+
+function MarkdownChangelog({ value }: { value: string }) {
+  return <div className="release-changelog">{value.split(/\r?\n/).map((line, index) => {
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) return <h3 key={index}>{heading[2]}</h3>;
+    const listItem = line.match(/^[-*]\s+(.+)$/);
+    if (listItem) return <div className="release-list-item" key={index}><span>•</span><p>{listItem[1]}</p></div>;
+    return line.trim() ? <p key={index}>{line}</p> : <br key={index} />;
+  })}</div>;
+}
 
 const emptyRecord = (): RecordItem => ({
   id: `A-${Date.now().toString().slice(-6)}`,
@@ -550,6 +561,7 @@ function Icon({ name }: { name: string }) {
         <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.37.36.7.64.96.3.27.68.42 1.08.44H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z" />
       </>
     ),
+    check: <path d="m5 12 4 4L19 6" />,
   };
   return (
     <svg
@@ -602,6 +614,12 @@ export default function Home() {
   const [printRecord, setPrintRecord] = useState<RecordItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [otoscopyResults, setOtoscopyResults] = useState<string[]>([]);
+  const [releaseNotes, setReleaseNotes] = useState<ReleaseNotes | null>(null);
+
+  useEffect(() => {
+    if (!window.desktop || new URLSearchParams(window.location.search).has("printRecord")) return;
+    void window.desktop.releaseNotes().then(setReleaseNotes).catch(() => {});
+  }, []);
 
   useEffect(() => {
     void fetch("/api/auth/session", { cache: "no-store" })
@@ -851,6 +869,16 @@ export default function Home() {
 
   return (
     <main dir="rtl">
+      {releaseNotes && <div className="release-modal-backdrop" role="presentation">
+        <section className="release-modal" role="dialog" aria-modal="true" aria-labelledby="release-title">
+          <div className="release-modal-icon"><Icon name="check" /></div>
+          <p className="eyebrow">به‌روزرسانی موفق</p>
+          <h2 id="release-title">آوینا به نسخه {releaseNotes.version} به‌روزرسانی شد</h2>
+          <p className="release-date">تاریخ انتشار: {new Date(releaseNotes.update_date).toLocaleDateString("fa-IR")}</p>
+          <div className="release-notes-scroll"><MarkdownChangelog value={releaseNotes.changelog} /></div>
+          <button className="primary" autoFocus onClick={() => void window.desktop?.acknowledgeRelease(releaseNotes.version).then(() => setReleaseNotes(null))}>بستن و ادامه</button>
+        </section>
+      </div>}
       <header className="topbar">
         <div className="brand">
           <strong className="brand-name">شنوایی شناسی</strong>
