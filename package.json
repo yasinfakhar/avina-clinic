@@ -15,7 +15,9 @@
     "desktop:dev": "electron .",
     "build": "next build",
     "build:desktop": "npm run release:validate && npm run build && node scripts/prepare-electron-build.mjs && electron-builder --win nsis --x64",
+    "release:windows": "node scripts/export-windows-release.mjs",
     "build:desktop:dir": "npm run build && node scripts/prepare-electron-build.mjs && electron-builder --win --x64 --dir",
+    "build:windows:zip": "bash scripts/build-windows-zip.sh",
     "release:validate": "node scripts/validate-release.mjs",
     "start": "next start",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
@@ -32,8 +34,7 @@
     "node-machine-id": "^1.1.12",
     "puppeteer-core": "^25.9.0",
     "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "sharp": "^0.35.4"
+    "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
@@ -66,7 +67,7 @@
     ],
     "extraResources": [
       {
-        "from": ".next/standalone",
+        "from": ".next/electron-standalone",
         "to": "standalone"
       }
     ],
@@ -74,6 +75,7 @@
       "output": "release"
     },
     "win": {
+      "artifactName": "Avina-Audiology-Setup-${version}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -94,7 +96,7 @@
     },
     "publish": {
       "provider": "generic",
-      "url": "https://updates.invalid/avina"
+      "url": "https://licence.sayahub.ir/avina/update/windows"
     },
     "mac": {
       "target": [

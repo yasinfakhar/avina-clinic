@@ -104,7 +104,6 @@ export function ImageAnnotator({ imageUrl, existingArrows = [], onClose, onSave 
       normalized: true,
     });
     onSave(output.toDataURL("image/jpeg", 0.92), normalizedArrows);
-    onClose();
   };
 
   return <div className="annotator-overlay" role="dialog" aria-modal="true" dir="rtl">

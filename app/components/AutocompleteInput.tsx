@@ -22,7 +22,6 @@ export function AutocompleteInput({
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectingSuggestionRef = useRef(false);
 
   const uniqueSuggestions = [...new Set(suggestions)];
   const filteredSuggestions = value
@@ -62,15 +61,8 @@ export function AutocompleteInput({
   };
 
   const handleBlur = () => {
-    if (selectingSuggestionRef.current) {
-      selectingSuggestionRef.current = false;
-    } else {
-      onSaveSuggestion?.(value.trim());
-    }
-    // Delay to allow click on suggestion
-    setTimeout(() => {
-      setIsOpen(false);
-    }, 200);
+    onSaveSuggestion?.(value.trim());
+    setIsOpen(false);
   };
 
   return (
@@ -117,10 +109,12 @@ export function AutocompleteInput({
           {filteredSuggestions.map((suggestion, index) => (
             <li
               key={`${suggestion}-${index}`}
-              onMouseDown={() => {
-                selectingSuggestionRef.current = true;
+              onPointerDown={(event) => {
+                // Select before the input's blur event closes the popup. This is
+                // more reliable than waiting for click in Electron on Windows.
+                event.preventDefault();
+                handleSelect(suggestion);
               }}
-              onClick={() => handleSelect(suggestion)}
               style={{
                 padding: "8px 12px",
                 cursor: "pointer",
@@ -140,6 +134,10 @@ export function AutocompleteInput({
                   className="autocomplete-delete"
                   aria-label={`حذف ${suggestion} از فهرست`}
                   title="حذف از فهرست"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
                   onMouseDown={(event) => {
                     event.preventDefault();
                     event.stopPropagation();

@@ -44,6 +44,23 @@ test("creates, binds, recovers, resets, and revokes a license", async () => {
   assert.equal((await api(`/admin/licenses/${created.body.id}/revoke`, { method: "POST", headers: adminHeaders })).response.status, 200);
 }, { timeout: 15_000 });
 
+test("publishes semantic versions and exposes the public update catalog", async () => {
+  await waitForServer();
+  for (const [name, contents] of [["latest.yml", "version: 1.1.0"], ["Avina-Audiology-Setup-1.1.0.exe", "fake installer"]]) {
+    const uploaded = await api(`/admin/update-files/${name}`, { method: "PUT", headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/octet-stream" }, body: contents });
+    assert.equal(uploaded.response.status, 201);
+  }
+  const first = await api("/admin/releases", { method: "POST", headers: adminHeaders, body: JSON.stringify({ version: "1.1.0", changelog: "## تغییرات\n- نسخه آزمایشی" }) });
+  assert.equal(first.response.status, 201);
+  assert.equal(first.body.release.version, "1.1.0");
+  const older = await api("/admin/releases", { method: "POST", headers: adminHeaders, body: JSON.stringify({ version: "1.0.9", changelog: "old" }) });
+  assert.equal(older.response.status, 409);
+  const catalog = await api("/avina/update");
+  assert.equal(catalog.response.status, 200);
+  assert.equal(catalog.body.latest.version, "1.1.0");
+  assert.match(catalog.body.latest.url, /Avina-Audiology-Setup-1\.1\.0\.exe$/);
+});
+
 test.after(async () => {
   child.kill("SIGTERM");
   await new Promise((resolve) => child.once("exit", resolve));

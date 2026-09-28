@@ -11,9 +11,10 @@ export function setSetting(key: string, value: string) {
 }
 
 export function publicSettings() {
+  const header = getDb().prepare("SELECT value, updated_at FROM app_settings WHERE key = ?").get("header_file") as { value: string; updated_at: number } | undefined;
   return {
     audiologistName: getSetting("audiologist_name") || "",
-    headerUrl: getSetting("header_file") ? "/api/settings/header" : "/header.png",
+    headerUrl: header ? `/api/settings/header?v=${header.updated_at}` : "/header.png",
     onboardingComplete: getSetting("onboarding_complete") === "true",
   };
 }

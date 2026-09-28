@@ -12,6 +12,7 @@ import React, {
 import { BirthDatePicker } from "./components/BirthDatePicker";
 import { AutocompleteInput } from "./components/AutocompleteInput";
 import { ImageAnnotator } from "./components/ImageAnnotator";
+import { dataUrlToBlob } from "./image-data";
 import {
   currentTimestamp,
   formatTehranDateTime,
@@ -208,6 +209,25 @@ async function persistRecord(record: RecordItem) {
     body: JSON.stringify(record),
   });
   if (!response.ok) throw new Error("ذخیره پرونده ناموفق بود");
+}
+
+async function generateAndOpenPdf(recordId: string) {
+  if (window.desktop) {
+    return window.desktop.generateAndOpenReport(recordId);
+  }
+  const response = await fetch("/api/reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ recordId }),
+  });
+  const report = (await response.json()) as { url?: string; fileName?: string };
+  if (!response.ok || !report.url) throw new Error("PDF generation failed");
+  const link = document.createElement("a");
+  link.href = report.url;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.click();
+  return { url: report.url, fileName: report.fileName || "report.pdf" };
 }
 
 async function uploadPatientImage(
@@ -524,6 +544,12 @@ function Icon({ name }: { name: string }) {
         <path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6" />
       </>
     ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.37.36.7.64.96.3.27.68.42 1.08.44H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z" />
+      </>
+    ),
   };
   return (
     <svg
@@ -587,6 +613,17 @@ export default function Home() {
       })
       .catch(() => setAuthMode("login"));
   }, []);
+
+  useEffect(() => {
+    if (!loggedIn || authMode !== "app") return;
+    void fetch("/api/settings", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        return response.json() as Promise<AppSettings>;
+      })
+      .then(setSettings)
+      .catch(() => setToast("خواندن تنظیمات کاربر ناموفق بود"));
+  }, [loggedIn, authMode]);
 
   useEffect(() => {
     if (!loggedIn || authMode !== "app") return;
@@ -794,7 +831,7 @@ export default function Home() {
   if (printRecord)
     return (
       <main className="print-report-ready">
-        <PrintReport record={printRecord} />
+        <PrintReport record={printRecord} headerUrl={settings.headerUrl} />
       </main>
     );
 
@@ -822,12 +859,12 @@ export default function Home() {
           </div>
         </div>
         <div className="profile">
-          <span className="avatar">د</span>
+          <span className="avatar">{settings.audiologistName.trim().charAt(0) || "ش"}</span>
           <div>
             <strong>{settings.audiologistName || "شنوایی‌شناس"}</strong>
             <small>Audiologist</small>
           </div>
-          <button className="logout" title="تنظیمات" aria-label="تنظیمات" onClick={() => setView("settings")}><Icon name="edit" /></button>
+          <button className="settings-button" title="تنظیمات" aria-label="تنظیمات" onClick={() => setView("settings")}><Icon name="settings" /></button>
           <button
             className="logout"
             onClick={() => {
@@ -1006,8 +1043,14 @@ export default function Home() {
                             icon="print"
                             label="پرینت"
                             onClick={() => {
-                              setCurrent(r);
-                              setTimeout(() => window.print(), 60);
+                              if (window.desktop) {
+                                void generateAndOpenPdf(r.id).catch(() =>
+                                  notify("ساخت یا بازکردن فایل PDF ناموفق بود"),
+                                );
+                              } else {
+                                setCurrent(r);
+                                setTimeout(() => window.print(), 60);
+                              }
                             }}
                           />
                           <ActionButton
@@ -1039,7 +1082,7 @@ export default function Home() {
           onDeleteOtoscopyResult={deleteOtoscopyResult}
         />
       )}
-      <PrintReport record={current} />
+      <PrintReport record={current} headerUrl={settings.headerUrl} />
       {toast && <div className="toast">{toast}</div>}
     </main>
   );
@@ -1068,7 +1111,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
   return <main className="login-page" dir="rtl"><section className="login-card onboarding-card">
     <h1>راه‌اندازی اولیه</h1><p>پیش از استفاده، مشخصات مدیر و سربرگ گزارش را ثبت کنید.</p>
     <form onSubmit={submit}>
-      <label>نام شنوایی‌شناس<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <label>نام و نام خانوادگی شنوایی‌شناس<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
       <label>رمز عبور جدید<input required minLength={10} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
       <label>تکرار رمز عبور<input required minLength={10} type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
       <label>تصویر سربرگ (دقیقاً ۲۱۷۱×۳۴۱ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
@@ -1082,11 +1125,15 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
   const [name, setName] = useState(settings.audiologistName);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirmation, setNewPasswordConfirmation] = useState("");
+  const [visiblePasswords, setVisiblePasswords] = useState({ current: false, new: false, confirmation: false });
   const [message, setMessage] = useState("");
   const [updateState, setUpdateState] = useState("آماده بررسی");
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; changelog: string; update_date: string; url: string } | null>(null);
   const [desktopInfo, setDesktopInfo] = useState<{ version?: string; licenseId?: string; deviceId?: string }>({});
   useEffect(() => {
-    const dispose = window.desktop?.onUpdateStatus((status) => setUpdateState(status.state));
+    const labels: Record<string, string> = { checking: "در حال بررسی…", downloading: "در حال دانلود…", "up-to-date": "نرم‌افزار به‌روز است", ready: "آماده نصب", error: "خطا در به‌روزرسانی", development: "در حالت توسعه غیرفعال است", catalog: "اطلاعات نسخه دریافت شد" };
+    const dispose = window.desktop?.onUpdateStatus((status) => { setUpdateState(status.percent != null ? `در حال دانلود: ${status.percent}٪` : labels[status.state] || status.state); if (status.latest) setUpdateInfo(status.latest); });
     if (window.desktop) void Promise.all([window.desktop.appVersion(), window.desktop.licenseStatus()]).then(([version, license]) => setDesktopInfo({ version, licenseId: license.licenseId, deviceId: license.deviceId }));
     return dispose;
   }, []);
@@ -1100,15 +1147,21 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
     if (!response.ok) return setMessage(body.error || "بارگذاری ناموفق بود."); onSettings({ ...settings, headerUrl: body.headerUrl || settings.headerUrl }); setMessage("سربرگ ذخیره شد.");
   };
   const changePassword = async () => {
+    if (newPassword !== newPasswordConfirmation) return setMessage("رمز جدید و تکرار آن یکسان نیستند.");
     const response = await fetch("/api/settings/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) }); const body = await response.json() as { error?: string };
     if (!response.ok) return setMessage(body.error || "تغییر رمز ناموفق بود."); setMessage("رمز تغییر کرد؛ لطفاً دوباره وارد شوید."); setTimeout(() => location.reload(), 1000);
   };
   return <section className="shell settings-page" dir="rtl">
     <div className="hero-row"><div><p className="eyebrow">مدیریت برنامه</p><h1>تنظیمات</h1></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
     <div className="settings-grid">
-      <article className="form-card"><h2>مشخصات و سربرگ</h2><label>نام شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><button className="primary" onClick={saveName}>ذخیره نام</button><label>سربرگ ۲۱۷۱×۳۴۱<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ" /></article>
-      <article className="form-card"><h2>تغییر رمز عبور</h2><label>رمز فعلی<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></label><label>رمز جدید<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></label><button className="primary" onClick={changePassword}>تغییر رمز</button></article>
-      <article className="form-card"><h2>مجوز و به‌روزرسانی</h2><p>نسخه: {desktopInfo.version || "نسخه وب"}</p>{desktopInfo.licenseId && <p dir="ltr">License: {desktopInfo.licenseId}<br />Device: {desktopInfo.deviceId}</p>}<p>وضعیت: {updateState}</p><button className="primary" disabled={typeof window === "undefined" || !window.desktop} onClick={() => void window.desktop?.checkForUpdates()}>بررسی به‌روزرسانی</button>{updateState === "ready" && <button className="secondary" onClick={() => window.desktop?.installUpdate()}>نصب و راه‌اندازی مجدد</button>}</article>
+      <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><button className="primary" onClick={saveName}>ذخیره نام</button><label>تصویر سربرگ چاپ (۲۱۷۱×۳۴۱ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
+      <article className="form-card"><h2>تغییر رمز عبور</h2>
+        <label>رمز فعلی<div className="password"><input required autoComplete="current-password" type={visiblePasswords.current ? "text" : "password"} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.current ? "پنهان کردن رمز فعلی" : "نمایش رمز فعلی"} onClick={() => setVisiblePasswords((state) => ({ ...state, current: !state.current }))}><Icon name="eye" /></button></div></label>
+        <label>رمز جدید<div className="password"><input required minLength={10} autoComplete="new-password" type={visiblePasswords.new ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.new ? "پنهان کردن رمز جدید" : "نمایش رمز جدید"} onClick={() => setVisiblePasswords((state) => ({ ...state, new: !state.new }))}><Icon name="eye" /></button></div></label>
+        <label>تکرار رمز جدید<div className="password"><input required minLength={10} autoComplete="new-password" type={visiblePasswords.confirmation ? "text" : "password"} value={newPasswordConfirmation} onChange={(e) => setNewPasswordConfirmation(e.target.value)} /><button type="button" aria-label={visiblePasswords.confirmation ? "پنهان کردن تکرار رمز جدید" : "نمایش تکرار رمز جدید"} onClick={() => setVisiblePasswords((state) => ({ ...state, confirmation: !state.confirmation }))}><Icon name="eye" /></button></div></label>
+        <button className="primary" onClick={changePassword}>تغییر رمز</button>
+      </article>
+      <article className="form-card"><h2>مجوز و به‌روزرسانی</h2><p>نسخه فعلی: {desktopInfo.version || "نسخه وب"}</p>{desktopInfo.licenseId && <p dir="ltr">License: {desktopInfo.licenseId}<br />Device: {desktopInfo.deviceId}</p>}<p>وضعیت: {updateState}</p>{updateInfo && <div className="update-details"><p><strong>آخرین نسخه: {updateInfo.version}</strong></p><p>تاریخ انتشار: {new Date(updateInfo.update_date).toLocaleDateString("fa-IR")}</p><div style={{ whiteSpace: "pre-wrap" }}>{updateInfo.changelog}</div></div>}<button className="primary" disabled={typeof window === "undefined" || !window.desktop} onClick={() => void window.desktop?.checkForUpdates().catch((error) => setUpdateState(error instanceof Error ? error.message : "بررسی ناموفق بود"))}>بررسی به‌روزرسانی</button>{updateState === "آماده نصب" && <button className="secondary" onClick={() => window.desktop?.installUpdate()}>نصب و راه‌اندازی مجدد</button>}</article>
     </div>{message && <div className="toast">{message}</div>}
   </section>;
 }
@@ -1784,13 +1837,22 @@ function Wizard({
                 </div>
               </div>
               <div className="export-row">
-                <button onClick={() => window.print()}>
+                <button onClick={() => {
+                  if (window.desktop) {
+                    void generateAndOpenPdf(record.id).catch(() =>
+                      notify("ساخت یا بازکردن فایل PDF ناموفق بود"),
+                    );
+                  } else {
+                    window.print();
+                  }
+                }}>
                   <Icon name="print" /> پرینت
                 </button>
                 <button
                   onClick={() => {
-                    notify("در پنجره چاپ، گزینه Save as PDF را انتخاب کنید");
-                    setTimeout(() => window.print(), 400);
+                    void generateAndOpenPdf(record.id)
+                      .then(() => notify("فایل PDF ذخیره و باز شد"))
+                      .catch(() => notify("ساخت یا بازکردن فایل PDF ناموفق بود"));
                   }}
                 >
                   <Icon name="file" /> خروجی PDF
@@ -1817,7 +1879,9 @@ function Wizard({
             const side = annotatingSide;
             void (async () => {
               try {
-                const blob = await (await fetch(imageDataUrl)).blob();
+                // Do not fetch the data URL here. Electron's production CSP only
+                // permits network requests to the local application origin.
+                const blob = dataUrlToBlob(imageDataUrl);
                 const uploaded = await uploadPatientImage(
                   record.id,
                   side,
@@ -1851,12 +1915,14 @@ function ReportPage({
   icon,
   title,
   record,
+  headerUrl,
   children,
   className = "",
 }: {
   icon: string;
   title: string;
   record: RecordItem;
+  headerUrl: string;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -1873,7 +1939,7 @@ function ReportPage({
       <header className="print-header">
         <img
           className="print-letterhead"
-          src="/api/settings/header"
+          src={headerUrl}
           alt="سربرگ کلینیک شنوایی"
         />
         <span className="print-visit-date" dir="rtl">
@@ -2095,7 +2161,7 @@ function PrintComments({
   );
 }
 
-function PrintReport({ record }: { record: RecordItem }) {
+function PrintReport({ record, headerUrl }: { record: RecordItem; headerUrl: string }) {
   const sides = ["right", "left"] as const;
   const tests = normalizeAudiometricTests(record.audiometricTests);
   const tympanometryDoctor =
@@ -2152,6 +2218,7 @@ function PrintReport({ record }: { record: RecordItem }) {
           icon="tympanometry"
           title="Tympanometry"
           record={record}
+          headerUrl={headerUrl}
           className="print-tympanometry-page"
         >
           {sides.some(hasOtoscopy) && (
@@ -2255,6 +2322,7 @@ function PrintReport({ record }: { record: RecordItem }) {
           icon="audiometry"
           title="Audiometry"
           record={record}
+          headerUrl={headerUrl}
           className="print-audiometry-page"
         >
           <div className="print-ear-grid">
@@ -2845,9 +2913,27 @@ function TympanometrySummaryChart({
         role="img"
         aria-label={`نمودار تمپانومتری گوش ${side === "right" ? "راست" : "چپ"}`}
       >
+        <rect
+          className="tympanometry-grid-border"
+          x={plot.left}
+          y={plot.top}
+          width={plot.right - plot.left}
+          height={plot.bottom - plot.top}
+          fill="none"
+          stroke="#8b96a5"
+          strokeWidth="1.25"
+        />
         {yTicks.map((v) => (
           <g key={v}>
-            <line x1={plot.left} x2={plot.right} y1={y(v)} y2={y(v)} />
+            <line
+              className="tympanometry-grid-line"
+              x1={plot.left}
+              x2={plot.right}
+              y1={y(v)}
+              y2={y(v)}
+              stroke="#aeb7c4"
+              strokeWidth="1"
+            />
             <text x="43" y={y(v) + 4}>
               {v}
             </text>
@@ -2855,7 +2941,15 @@ function TympanometrySummaryChart({
         ))}
         {xTicks.map((v) => (
           <g key={v}>
-            <line x1={x(v)} x2={x(v)} y1={plot.top} y2={plot.bottom} />
+            <line
+              className="tympanometry-grid-line"
+              x1={x(v)}
+              x2={x(v)}
+              y1={plot.top}
+              y2={plot.bottom}
+              stroke="#aeb7c4"
+              strokeWidth="1"
+            />
             <text x={x(v)} y="269">
               {v}
             </text>

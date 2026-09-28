@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import electronUpdater from "electron-updater";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, cpSync, writeFileSync, appendFileSync, renameSync, rmSync, statSync, readFileSync } from "node:fs";
@@ -56,7 +56,7 @@ async function startServer() {
   const args = app.isPackaged ? [script] : [script, "dev", "-p", String(port), "-H", "127.0.0.1"];
   serverProcess = spawn(process.execPath, args, {
     cwd: app.isPackaged ? path.dirname(script) : applicationRoot,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PORT: String(port), HOSTNAME: "127.0.0.1", AUDIOLOGY_DATA_DIR: dataDirectory, INITIAL_ADMIN_PASSWORD: process.env.INITIAL_ADMIN_PASSWORD || releaseConfig.initialAdminPassword || "ChangeMe!2026", LICENSE_SERVICE_URL: licenseServiceUrl, LICENSE_PUBLIC_KEY: licensePublicKey },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_PATH: app.isPackaged ? path.join(process.resourcesPath, "standalone", "runtime_modules") : process.env.NODE_PATH, PORT: String(port), HOSTNAME: "127.0.0.1", AUDIOLOGY_DATA_DIR: dataDirectory, INITIAL_ADMIN_PASSWORD: process.env.INITIAL_ADMIN_PASSWORD || releaseConfig.initialAdminPassword || "ChangeMe!2026", LICENSE_SERVICE_URL: licenseServiceUrl, LICENSE_PUBLIC_KEY: licensePublicKey },
     stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
   });
   serverProcess.stdout?.on("data", (value) => console.log(`[server] ${value}`));
@@ -68,7 +68,7 @@ async function startServer() {
 }
 
 function secureWindowOptions() {
-  return { preload: path.join(electronDirectory, "preload.mjs"), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true };
+  return { preload: path.join(electronDirectory, "preload.cjs"), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true };
 }
 
 function lockWindow(window) {
@@ -79,6 +79,7 @@ function lockWindow(window) {
   });
   window.webContents.on("did-fail-load", (_event, code, description, url) => log(`Window failed to load ${url}: ${code} ${description}`));
   window.webContents.on("render-process-gone", (_event, details) => log("Renderer process exited", JSON.stringify(details)));
+  window.webContents.on("console-message", (_event, level, message) => { if (level >= 2) log(`Renderer console level=${level}`, message); });
 }
 
 async function createApplicationWindow() {
@@ -104,6 +105,15 @@ async function offerLegacyImport() {
 
 function sendUpdate(state, extra = {}) { if (appWindow && !appWindow.isDestroyed()) appWindow.webContents.send("update:status", { state, ...extra }); }
 
+async function fetchReleaseCatalog() {
+  const catalogUrl = new URL("../", updateBaseUrl.endsWith("/") ? updateBaseUrl : `${updateBaseUrl}/`).toString();
+  const response = await fetch(catalogUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) throw new Error(`Update service returned ${response.status}`);
+  const data = await response.json();
+  if (!data.latest || typeof data.latest.version !== "string") return { latest: null, releases: [] };
+  return data;
+}
+
 function configureUpdater() {
   autoUpdater.autoDownload = true; autoUpdater.allowDowngrade = false;
   if (updateBaseUrl) autoUpdater.setFeedURL({ provider: "generic", url: updateBaseUrl });
@@ -122,7 +132,18 @@ async function generateReport(recordId) {
     await hidden.loadURL(`${localOrigin}/?printRecord=${encodeURIComponent(recordId)}`);
     await hidden.webContents.executeJavaScript(`new Promise((resolve, reject) => {
       const started = Date.now(); const timer = setInterval(() => {
-        if (document.querySelector('.print-report-ready')) { clearInterval(timer); document.fonts.ready.then(resolve); }
+        if (document.querySelector('.print-report-ready')) {
+          const images = [...document.images];
+          Promise.all([
+            document.fonts.ready,
+            ...images.map((image) => image.complete
+              ? (image.naturalWidth ? Promise.resolve() : Promise.reject(new Error('Report image failed to load')))
+              : new Promise((imageResolve, imageReject) => {
+                  image.addEventListener('load', imageResolve, { once: true });
+                  image.addEventListener('error', () => imageReject(new Error('Report image failed to load')), { once: true });
+                }))
+          ]).then(() => { clearInterval(timer); resolve(); }, (error) => { clearInterval(timer); reject(error); });
+        }
         else if (Date.now() - started > 30000) { clearInterval(timer); reject(new Error('Report timed out')); }
       }, 100);
     })`);
@@ -139,7 +160,7 @@ async function generateReport(recordId) {
     database.prepare(`INSERT INTO files (record_id, category, slot, stored_name, original_name, mime_type, size, created_at) VALUES (?, 'pdf', 'report', ?, ?, 'application/pdf', ?, ?)`)
       .run(recordId, storedName, storedName, statSync(output).size, Date.now());
     for (const file of old) if (file.stored_name !== storedName) rmSync(path.join(dataDirectory, "pdfs", file.stored_name), { force: true });
-    database.close(); return { url: `/api/files/pdfs/${storedName}`, fileName: storedName };
+    database.close(); return { url: `/api/files/pdfs/${storedName}`, fileName: storedName, outputPath: output };
   } finally { hidden.destroy(); }
 }
 
@@ -158,10 +179,18 @@ ipcMain.handle("license:activate", async (_event, licenseKey) => {
 ipcMain.handle("update:check", async () => {
   if (!app.isPackaged) return sendUpdate("development");
   if (!/^https:\/\//i.test(updateBaseUrl)) throw new Error("Update URL is not configured securely");
+  const catalog = await fetchReleaseCatalog();
+  sendUpdate("catalog", { currentVersion: app.getVersion(), latest: catalog.latest, releases: catalog.releases });
   await autoUpdater.checkForUpdates();
 });
 ipcMain.on("update:install", () => { quittingForUpdate = true; autoUpdater.quitAndInstall(false, true); });
 ipcMain.handle("report:generate", (_event, recordId) => generateReport(recordId));
+ipcMain.handle("report:generate-open", async (_event, recordId) => {
+  const report = await generateReport(recordId);
+  const error = await shell.openPath(report.outputPath);
+  if (error) throw new Error(`Could not open generated PDF: ${error}`);
+  return { url: report.url, fileName: report.fileName };
+});
 
 app.on("before-quit", () => { if (serverProcess && !serverProcess.killed) serverProcess.kill("SIGTERM"); });
 app.on("window-all-closed", () => { if (process.platform !== "darwin" || quittingForUpdate) app.quit(); });

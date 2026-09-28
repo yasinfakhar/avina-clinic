@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import sharp from "sharp";
 import { validateHeaderImage } from "../app/server/header-image.ts";
-import { verifyActivationToken } from "../electron/licensing.mjs";
+import { fingerprintFromIdentity, verifyActivationToken } from "../electron/licensing.mjs";
 
 function signedToken(payload, privateKey) {
   const header = Buffer.from(JSON.stringify({ alg: "EdDSA", typ: "JWT" })).toString("base64url");
@@ -13,13 +12,13 @@ function signedToken(payload, privateKey) {
   return `${header}.${body}.${signature}`;
 }
 
-test("accepts only fully decodable 2171x341 header images", async () => {
-  const valid = await sharp({ create: { width: 2171, height: 341, channels: 3, background: "white" } }).png().toBuffer();
-  assert.equal((await validateHeaderImage(valid, "image/png")).extension, ".png");
-  await assert.rejects(validateHeaderImage(valid, "image/jpeg"), /معتبر نیست/);
-  const wrongSize = await sharp({ create: { width: 100, height: 100, channels: 3, background: "white" } }).png().toBuffer();
-  await assert.rejects(validateHeaderImage(wrongSize, "image/png"), /۲۱۷۱×۳۴۱/);
-  await assert.rejects(validateHeaderImage(Buffer.from("not an image"), "image/png"), /معتبر نیست/);
+test("accepts only structurally valid 2171x341 header images", () => {
+  const valid = readFileSync(new URL("../public/header.png", import.meta.url));
+  assert.equal(validateHeaderImage(valid, "image/png").extension, ".png");
+  assert.throws(() => validateHeaderImage(valid, "image/jpeg"), /معتبر نیست/);
+  const wrongSize = Buffer.from(valid); wrongSize.writeUInt32BE(100, 16); wrongSize.writeUInt32BE(100, 20);
+  assert.throws(() => validateHeaderImage(wrongSize, "image/png"), /۲۱۷۱×۳۴۱/);
+  assert.throws(() => validateHeaderImage(Buffer.from("not an image"), "image/png"), /معتبر نیست/);
 });
 
 test("activation tokens are signed and bound to one fingerprint", () => {
@@ -29,6 +28,13 @@ test("activation tokens are signed and bound to one fingerprint", () => {
   assert.deepEqual(verifyActivationToken(token, publicKey, "device-a"), payload);
   assert.equal(verifyActivationToken(token, publicKey, "device-b"), null);
   assert.equal(verifyActivationToken(`${token}x`, publicKey, "device-a"), null);
+});
+
+test("machine fingerprint has the server's expected SHA-256 format", () => {
+  const identity = { platform: "win32", arch: "x64", machineId: "cloned-machine-guid", systemUuid: "11111111-2222-3333-4444-555555555555" };
+  assert.match(fingerprintFromIdentity(identity), /^[a-f0-9]{64}$/);
+  assert.equal(fingerprintFromIdentity(identity), fingerprintFromIdentity(identity));
+  assert.notEqual(fingerprintFromIdentity(identity), fingerprintFromIdentity({ ...identity, systemUuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }));
 });
 
 test("electron-updater CommonJS interop exposes autoUpdater", () => {

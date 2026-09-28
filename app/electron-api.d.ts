@@ -8,8 +8,9 @@ declare global {
       checkForUpdates(): Promise<void>;
       installUpdate(): void;
       generateReport(recordId: string): Promise<{ url: string; fileName: string }>;
+      generateAndOpenReport(recordId: string): Promise<{ url: string; fileName: string }>;
       importLegacyData(): Promise<{ imported: boolean; message?: string }>;
-      onUpdateStatus(callback: (status: { state: string; message?: string; percent?: number }) => void): () => void;
+      onUpdateStatus(callback: (status: { state: string; message?: string; percent?: number; currentVersion?: string; latest?: { version: string; changelog: string; update_date: string; url: string }; releases?: Array<{ version: string; changelog: string; update_date: string; url: string }> }) => void): () => void;
     };
   }
 }

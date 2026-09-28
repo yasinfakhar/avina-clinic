@@ -95,3 +95,16 @@ docker compose --env-file .env -f docker-compose.license.yml up -d --build
 ```
 
 Never run `docker compose down -v` unless you intentionally want to delete all licences and signing keys.
+
+## Updates and admin panel
+
+Open `https://licence.sayahub.ir/admin` and sign in with `LICENSE_ADMIN_TOKEN`. The panel manages clients, licences, recovery/device resets, and release metadata. The public catalog is available at `GET /avina/update`, and electron-updater files are served from `/avina/update/windows/`.
+
+Build a signed Windows release from the repository (the version must already match `package.json`):
+
+```bash
+UPDATE_BASE_URL=https://licence.sayahub.ir/avina/update/windows \
+  npm run release:windows -- 1.1.0
+```
+
+This writes `latest.yml`, the NSIS installer, and its blockmap to the repository's `windows/` directory. Copy those files into the persistent service volume at `/data/updates/windows`. A production build still requires the release environment variables documented by `release:validate`, including the Windows code-signing certificate.

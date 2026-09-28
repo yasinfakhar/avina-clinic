@@ -1,11 +1,35 @@
 import { createHash, verify } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import machineIdPackage from "node-machine-id";
 const { machineIdSync } = machineIdPackage;
 
+function windowsSystemUuid() {
+  if (process.platform !== "win32") return "";
+  try {
+    const output = execFileSync("powershell.exe", [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+      "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID",
+    ], { encoding: "utf8", windowsHide: true, timeout: 5_000 }).trim().toLowerCase();
+    if (/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(output)
+      && output !== "00000000-0000-0000-0000-000000000000"
+      && output !== "ffffffff-ffff-ffff-ffff-ffffffffffff") return output;
+  } catch {}
+  return "";
+}
+
+export function fingerprintFromIdentity({ platform, arch, machineId, systemUuid = "" }) {
+  const raw = `${platform}|${arch}|${machineId}|${systemUuid}`;
+  return createHash("sha256").update(`audiology-desktop-v2|${raw}`).digest("hex");
+}
+
 export function machineFingerprint() {
-  const raw = `${process.platform}|${process.arch}|${machineIdSync(true)}`;
-  return createHash("sha256").update(`audiology-desktop-v1|${raw}`).digest("hex");
+  return fingerprintFromIdentity({
+    platform: process.platform,
+    arch: process.arch,
+    machineId: machineIdSync(true),
+    systemUuid: windowsSystemUuid(),
+  });
 }
 
 function decodePart(value) {
