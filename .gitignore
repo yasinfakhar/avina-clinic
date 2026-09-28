@@ -45,4 +45,5 @@ next-env.d.ts
 /release/
 /windows/
 /electron/release-config.json
+/electron/app-update.yml
 /.certificates/

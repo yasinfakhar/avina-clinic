@@ -180,11 +180,18 @@ ipcMain.handle("license:activate", async (_event, licenseKey) => {
 });
 ipcMain.handle("update:check", async () => {
   if (!app.isPackaged) return sendUpdate("development");
-  if (!/^https:\/\//i.test(updateBaseUrl)) throw new Error("Update URL is not configured securely");
-  const catalog = await fetchReleaseCatalog();
-  if (catalog.latest?.version && catalog.latest.version !== app.getVersion()) writeFileSync(pendingReleaseFile, JSON.stringify(catalog.latest), { mode: 0o600 });
-  sendUpdate("catalog", { currentVersion: app.getVersion(), latest: catalog.latest, releases: catalog.releases });
-  await autoUpdater.checkForUpdates();
+  try {
+    if (!/^https:\/\//i.test(updateBaseUrl)) throw new Error("Update URL is not configured securely");
+    const catalog = await fetchReleaseCatalog();
+    if (catalog.latest?.version && catalog.latest.version !== app.getVersion()) writeFileSync(pendingReleaseFile, JSON.stringify(catalog.latest), { mode: 0o600 });
+    sendUpdate("catalog", { currentVersion: app.getVersion(), latest: catalog.latest, releases: catalog.releases });
+    await autoUpdater.checkForUpdates();
+    return { checked: true };
+  } catch (error) {
+    log("Update check failed", error);
+    sendUpdate("error", { message: error instanceof Error ? error.message : String(error) });
+    return { checked: false };
+  }
 });
 ipcMain.handle("update:release-notes", async () => {
   try {
