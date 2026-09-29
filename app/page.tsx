@@ -145,7 +145,7 @@ const emptyTympanometry = (): Tympanometry => ({
   comment: "",
 });
 const audiometryFrequencies = [
-  250, 500, 1000, 2000, 3000, 4000, 6000, 8000,
+  125, 250, 500, 1000, 2000, 3000, 4000, 6000, 8000,
 ] as const;
 const weberFrequencies = [250, 500, 1000, 2000, 4000] as const;
 const emptyAudiometryRow = (): AudiometryRow =>
@@ -523,6 +523,12 @@ function Icon({ name }: { name: string }) {
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
       </>
     ),
+    arrow: (
+      <>
+        <path d="M5 19 19 5" />
+        <path d="M10 5h9v9" />
+      </>
+    ),
     sms: (
       <>
         <path d="M21 15a4 4 0 0 1-4 4H8l-5 3v-15a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
@@ -617,6 +623,8 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [otoscopyResults, setOtoscopyResults] = useState<string[]>([]);
   const [releaseNotes, setReleaseNotes] = useState<ReleaseNotes | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RecordItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!window.desktop || new URLSearchParams(window.location.search).has("printRecord")) return;
@@ -847,15 +855,22 @@ export default function Home() {
       setSaving(false);
     }
   };
-  const remove = (id: string) => {
-    const next = records.filter((r) => r.id !== id);
-    setRecords(next);
-    void fetch(`/api/records/${encodeURIComponent(id)}`, { method: "DELETE" })
-      .then((response) => {
-        if (!response.ok) throw new Error();
-        notify("پرونده حذف شد");
-      })
-      .catch(() => notify("حذف پرونده ناموفق بود"));
+  const remove = async (id: string) => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/records/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error();
+      setRecords((previous) => previous.filter((record) => record.id !== id));
+      setDeleteTarget(null);
+      notify("پرونده حذف شد");
+    } catch {
+      notify("حذف پرونده ناموفق بود");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (printRecord)
@@ -891,9 +906,28 @@ export default function Home() {
           <button className="primary" autoFocus onClick={() => void window.desktop?.acknowledgeRelease(releaseNotes.version).then(() => setReleaseNotes(null))}>بستن و ادامه</button>
         </section>
       </div>}
+      {deleteTarget && (
+        <div className="delete-modal-backdrop" role="presentation">
+          <section className="delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-modal-title" aria-describedby="delete-modal-description">
+            <div className="delete-modal-icon"><Icon name="trash" /></div>
+            <h2 id="delete-modal-title">حذف تشخیص</h2>
+            <p id="delete-modal-description">
+              آیا از حذف تشخیص <strong>{deleteTarget.fullName || "بدون نام"}</strong> مطمئن هستید؟ این عملیات قابل بازگشت نیست.
+            </p>
+            <div className="delete-modal-actions">
+              <button type="button" className="secondary" disabled={deleting} onClick={() => setDeleteTarget(null)}>
+                خیر، انصراف
+              </button>
+              <button type="button" className="danger-button" disabled={deleting} autoFocus onClick={() => void remove(deleteTarget.id)}>
+                {deleting ? "در حال حذف…" : "بله، حذف شود"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <header className="topbar">
         <div className="brand">
-          <strong className="brand-name">شنوایی شناسی</strong>
+          <strong className="brand-name">سامانه مدیریت شنوایی شناسی</strong>
           <div>
             {/* <small>سامانه مدیریت شنوایی‌سنجی</small> */}
           </div>
@@ -1096,7 +1130,7 @@ export default function Home() {
                           <ActionButton
                             icon="trash"
                             label="حذف"
-                            onClick={() => remove(r.id)}
+                            onClick={() => setDeleteTarget(r)}
                           />
                         </div>
                       </td>
@@ -1154,7 +1188,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
       <label>نام و نام خانوادگی شنوایی‌شناس<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
       <label>رمز عبور جدید<input required minLength={10} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
       <label>تکرار رمز عبور<input required minLength={10} type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
-      <label>تصویر سربرگ (دقیقاً ۲۱۷۰×۲۳۰ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
+      <label>تصویر سربرگ (دقیقاً ۲۴۸۰×۲۳۰ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
       {error && <p className="login-error" role="alert">{error}</p>}
       <button className="primary wide" disabled={saving}>{saving ? "در حال ذخیره…" : "تکمیل راه‌اندازی"}</button>
     </form>
@@ -1195,7 +1229,7 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
   return <section className="shell settings-page" dir="rtl">
     <div className="hero-row"><div><p className="eyebrow">مدیریت برنامه</p><h1>تنظیمات</h1></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
     <div className="settings-grid">
-      <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>تم رنگی چاپ و PDF<div className="theme-color-field"><input type="color" value={/^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : "#5F7DC9"} onChange={(e) => setThemeColor(e.target.value.toUpperCase())} aria-label="انتخاب تم رنگی" /><input dir="ltr" value={themeColor} maxLength={7} placeholder="#5F7DC9" pattern="#[0-9A-Fa-f]{6}" onChange={(e) => setThemeColor(e.target.value)} aria-label="کد تم رنگی" /></div><small>کد رنگ را به شکل #RRGGBB وارد کنید. رنگ‌های پزشکی گوش راست و چپ تغییر نمی‌کنند.</small></label><button className="primary" onClick={saveName}>ذخیره مشخصات و تم رنگی</button><label>تصویر سربرگ چاپ (۲۱۷۰×۲۳۰ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
+      <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>تم رنگی چاپ و PDF<div className="theme-color-field"><input type="color" value={/^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : "#5F7DC9"} onChange={(e) => setThemeColor(e.target.value.toUpperCase())} aria-label="انتخاب تم رنگی" /><input dir="ltr" value={themeColor} maxLength={7} placeholder="#5F7DC9" pattern="#[0-9A-Fa-f]{6}" onChange={(e) => setThemeColor(e.target.value)} aria-label="کد تم رنگی" /></div><small>کد رنگ را به شکل #RRGGBB وارد کنید. رنگ‌های پزشکی گوش راست و چپ تغییر نمی‌کنند.</small></label><button className="primary" onClick={saveName}>ذخیره مشخصات و تم رنگی</button><label>تصویر سربرگ چاپ (۲۴۸۰×۲۳۰ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
       <article className="form-card"><h2>تغییر رمز عبور</h2>
         <label>رمز فعلی<div className="password"><input required autoComplete="current-password" type={visiblePasswords.current ? "text" : "password"} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.current ? "پنهان کردن رمز فعلی" : "نمایش رمز فعلی"} onClick={() => setVisiblePasswords((state) => ({ ...state, current: !state.current }))}><Icon name="eye" /></button></div></label>
         <label>رمز جدید<div className="password"><input required minLength={10} autoComplete="new-password" type={visiblePasswords.new ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.new ? "پنهان کردن رمز جدید" : "نمایش رمز جدید"} onClick={() => setVisiblePasswords((state) => ({ ...state, new: !state.new }))}><Icon name="eye" /></button></div></label>
@@ -2001,10 +2035,10 @@ function ReportPage({
           src={headerUrl}
           alt="سربرگ کلینیک شنوایی"
         />
-        <span className="print-visit-date" dir="rtl">
-          تاریخ مراجعه: {formatTehranDateTime(currentTimestamp()).split("،")[0]}
-        </span>
       </header>
+      <span className="print-visit-date" dir="rtl">
+        تاریخ مراجعه: {formatTehranDateTime(currentTimestamp()).split("،")[0]}
+      </span>
       {patientFields.some(([, value]) => hasText(value)) && (
         <div
           className="print-patient-line"

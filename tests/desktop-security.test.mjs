@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { validateHeaderImage } from "../app/server/header-image.ts";
 import { fingerprintFromIdentity, verifyActivationToken } from "../electron/licensing.mjs";
+import { getReleaseNotesForVersion } from "../electron/release-notes.mjs";
 
 function signedToken(payload, privateKey) {
   const header = Buffer.from(JSON.stringify({ alg: "EdDSA", typ: "JWT" })).toString("base64url");
@@ -12,14 +15,14 @@ function signedToken(payload, privateKey) {
   return `${header}.${body}.${signature}`;
 }
 
-test("accepts only structurally valid 2170x230 header images", () => {
+test("accepts only structurally valid 2480x230 header images", () => {
   const valid = Buffer.from(readFileSync(new URL("../public/header.png", import.meta.url)));
-  valid.writeUInt32BE(2170, 16);
+  valid.writeUInt32BE(2480, 16);
   valid.writeUInt32BE(230, 20);
   assert.equal(validateHeaderImage(valid, "image/png").extension, ".png");
   assert.throws(() => validateHeaderImage(valid, "image/jpeg"), /معتبر نیست/);
   const wrongSize = Buffer.from(valid); wrongSize.writeUInt32BE(100, 16); wrongSize.writeUInt32BE(100, 20);
-  assert.throws(() => validateHeaderImage(wrongSize, "image/png"), /۲۱۷۰×۲۳۰/);
+  assert.throws(() => validateHeaderImage(wrongSize, "image/png"), /۲۴۸۰×۲۳۰/);
   assert.throws(() => validateHeaderImage(Buffer.from("not an image"), "image/png"), /معتبر نیست/);
 });
 
@@ -43,4 +46,49 @@ test("electron-updater CommonJS interop exposes autoUpdater", () => {
   const main = readFileSync(new URL("../electron/main.mjs", import.meta.url), "utf8");
   assert.match(main, /import electronUpdater from "electron-updater"/);
   assert.doesNotMatch(main, /import\s*\{\s*autoUpdater\s*\}\s*from\s*"electron-updater"/);
+});
+
+test("self-hosted Windows updates use manifest hash verification without CA trust", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(manifest.build.win.verifyUpdateCodeSignature, false);
+  assert.match(manifest.build.publish.url, /^https:\/\//);
+});
+
+test("Windows installer checks only the Avina executable during upgrades", () => {
+  const installer = readFileSync(new URL("../build/installer.nsh", import.meta.url), "utf8");
+  assert.match(installer, /!macro customCheckAppRunning/);
+  assert.match(installer, /taskkill\.exe.*APP_EXECUTABLE_FILENAME/);
+  assert.doesNotMatch(installer, /StartsWith\('\$INSTDIR'/);
+});
+
+test("Windows releases always use one fixed all-users installation", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(manifest.build.nsis.perMachine, true);
+  assert.equal(manifest.build.nsis.allowElevation, true);
+  assert.equal(manifest.build.nsis.allowToChangeInstallationDirectory, false);
+});
+
+test("automatic updates wait for the bundled server to stop before installation", () => {
+  const main = readFileSync(new URL("../electron/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /async function stopServer\(\)/);
+  assert.match(main, /taskkill\.exe.*\["\/PID", String\(child\.pid\), "\/T", "\/F"\]/s);
+  assert.match(main, /did not stop/);
+  assert.match(main, /await stopServer\(\);\s*autoUpdater\.quitAndInstall/);
+});
+
+test("shows release notes once on the first launch of an installed version", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "audiology-release-notes-"));
+  const pending = path.join(directory, "pending.json");
+  const acknowledged = path.join(directory, "acknowledged.json");
+  const release = { version: "1.2.3", changelog: "- New feature", update_date: "2026-09-28", url: "https://example.com" };
+
+  try {
+    writeFileSync(pending, JSON.stringify(release));
+    assert.deepEqual(getReleaseNotesForVersion(pending, acknowledged, "1.2.3"), release);
+
+    writeFileSync(acknowledged, JSON.stringify({ version: "1.2.3" }));
+    assert.equal(getReleaseNotesForVersion(pending, acknowledged, "1.2.3"), null);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

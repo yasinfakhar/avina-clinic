@@ -1,4 +1,4 @@
-const EXPECTED_WIDTH = 2170;
+const EXPECTED_WIDTH = 2480;
 const EXPECTED_HEIGHT = 230;
 
 function png(buffer: Buffer) {
@@ -39,6 +39,6 @@ function webp(buffer: Buffer) {
 export function validateHeaderImage(buffer: Buffer, declaredType: string) {
   const details = png(buffer) || jpeg(buffer) || webp(buffer);
   if (!details || details.mime !== declaredType) throw new Error("نوع یا محتوای تصویر معتبر نیست.");
-  if (details.width !== EXPECTED_WIDTH || details.height !== EXPECTED_HEIGHT) throw new Error("ابعاد تصویر سربرگ باید دقیقاً ۲۱۷۰×۲۳۰ پیکسل باشد.");
+  if (details.width !== EXPECTED_WIDTH || details.height !== EXPECTED_HEIGHT) throw new Error("ابعاد تصویر سربرگ باید دقیقاً ۲۴۸۰×۲۳۰ پیکسل باشد.");
   return details;
 }

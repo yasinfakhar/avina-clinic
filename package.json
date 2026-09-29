@@ -3,7 +3,7 @@
   "productName": "Avina Audiology",
   "description": "Offline desktop management system for an audiology clinic",
   "author": "Avina Audiology",
-  "version": "1.0.4",
+  "version": "1.0.15",
   "private": true,
   "main": "electron/main.mjs",
   "engines": {
@@ -89,11 +89,13 @@
         }
       ],
       "icon": "public/avina-logo.png",
-      "verifyUpdateCodeSignature": true
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": false

@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { activateLicense, machineFingerprint, readActivation } from "./licensing.mjs";
+import { getReleaseNotesForVersion } from "./release-notes.mjs";
 
 const { autoUpdater } = electronUpdater;
 
@@ -67,6 +68,50 @@ async function startServer() {
   serverProcess.on("exit", (code, signal) => log(`Local server exited code=${code} signal=${signal}`));
   await waitForServer(localOrigin);
   log(`Local server ready at ${localOrigin}`);
+}
+
+function waitForProcessExit(child, timeoutMs) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (exited) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    child.once("exit", onExit);
+  });
+}
+
+async function stopServer() {
+  const child = serverProcess;
+  serverProcess = undefined;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+  log(`Stopping local server pid=${child.pid}`);
+  if (process.platform === "win32" && child.pid) {
+    const taskkillExitCode = await new Promise((resolve) => {
+      const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      killer.once("error", () => resolve(-1));
+      killer.once("exit", (code) => resolve(code ?? -1));
+    });
+    log(`taskkill completed for local server pid=${child.pid}, exitCode=${taskkillExitCode}`);
+  } else {
+    child.kill("SIGTERM");
+    if (await waitForProcessExit(child, 4_000)) return;
+    child.kill("SIGKILL");
+  }
+
+  if (!(await waitForProcessExit(child, 4_000))) {
+    throw new Error(`Local application server pid=${child.pid} did not stop`);
+  }
 }
 
 function secureWindowOptions() {
@@ -194,14 +239,7 @@ ipcMain.handle("update:check", async () => {
   }
 });
 ipcMain.handle("update:release-notes", async () => {
-  try {
-    const release = JSON.parse(readFileSync(pendingReleaseFile, "utf8"));
-    if (release.version !== app.getVersion() || typeof release.changelog !== "string") return null;
-    const acknowledged = JSON.parse(readFileSync(acknowledgedReleaseFile, "utf8"));
-    if (acknowledged.version === app.getVersion()) return null;
-    return release;
-  } catch {}
-  return null;
+  return getReleaseNotesForVersion(pendingReleaseFile, acknowledgedReleaseFile, app.getVersion());
 });
 ipcMain.handle("update:acknowledge-release", (_event, version) => {
   if (version !== app.getVersion()) throw new Error("Invalid release version");
@@ -209,7 +247,18 @@ ipcMain.handle("update:acknowledge-release", (_event, version) => {
   rmSync(pendingReleaseFile, { force: true });
   return true;
 });
-ipcMain.on("update:install", () => { quittingForUpdate = true; autoUpdater.quitAndInstall(false, true); });
+ipcMain.on("update:install", () => {
+  void (async () => {
+    quittingForUpdate = true;
+    sendUpdate("installing");
+    await stopServer();
+    autoUpdater.quitAndInstall(false, true);
+  })().catch((error) => {
+    quittingForUpdate = false;
+    log("Unable to stop local server before update", error);
+    sendUpdate("error", { message: error instanceof Error ? error.message : String(error) });
+  });
+});
 ipcMain.handle("report:generate", (_event, recordId) => generateReport(recordId));
 ipcMain.handle("report:generate-open", async (_event, recordId) => {
   const report = await generateReport(recordId);
