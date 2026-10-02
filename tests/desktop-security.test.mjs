@@ -15,14 +15,18 @@ function signedToken(payload, privateKey) {
   return `${header}.${body}.${signature}`;
 }
 
-test("accepts only structurally valid 2480x230 header images", () => {
+test("accepts structurally valid 2480px-wide header images up to 400px high", () => {
   const valid = Buffer.from(readFileSync(new URL("../public/header.png", import.meta.url)));
   valid.writeUInt32BE(2480, 16);
-  valid.writeUInt32BE(230, 20);
+  valid.writeUInt32BE(400, 20);
   assert.equal(validateHeaderImage(valid, "image/png").extension, ".png");
+  const shorter = Buffer.from(valid); shorter.writeUInt32BE(100, 20);
+  assert.equal(validateHeaderImage(shorter, "image/png").height, 100);
   assert.throws(() => validateHeaderImage(valid, "image/jpeg"), /معتبر نیست/);
-  const wrongSize = Buffer.from(valid); wrongSize.writeUInt32BE(100, 16); wrongSize.writeUInt32BE(100, 20);
-  assert.throws(() => validateHeaderImage(wrongSize, "image/png"), /۲۴۸۰×۲۳۰/);
+  const tooTall = Buffer.from(valid); tooTall.writeUInt32BE(401, 20);
+  assert.throws(() => validateHeaderImage(tooTall, "image/png"), /حداکثر ۴۰۰/);
+  const wrongWidth = Buffer.from(valid); wrongWidth.writeUInt32BE(100, 16);
+  assert.throws(() => validateHeaderImage(wrongWidth, "image/png"), /عرض.*۲۴۸۰/);
   assert.throws(() => validateHeaderImage(Buffer.from("not an image"), "image/png"), /معتبر نیست/);
 });
 

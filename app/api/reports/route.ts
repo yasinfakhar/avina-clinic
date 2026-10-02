@@ -56,6 +56,8 @@ export async function POST(request: Request) {
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage();
+    const cookie = request.headers.get("cookie");
+    if (cookie) await page.setExtraHTTPHeaders({ cookie });
     const reportUrl = new URL(request.url);
     reportUrl.pathname = "/";
     reportUrl.search = `?printRecord=${encodeURIComponent(recordId)}`;

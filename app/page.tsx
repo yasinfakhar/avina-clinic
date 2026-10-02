@@ -87,8 +87,12 @@ type RecordItem = {
   updatedAt: string;
 };
 
-type AppSettings = { audiologistName: string; printThemeColor: string; headerUrl: string; onboardingComplete: boolean };
+type TestFee = { id: string; name: string; price: number | null };
+type AppSettings = { audiologistName: string; printThemeColor: string; headerUrl: string; onboardingComplete: boolean; testFees: TestFee[] };
+type InvoiceDraft = { honorific: "سرکار خانم" | "جناب آقای"; patientName: string; date: string; items: TestFee[] };
 type ReleaseNotes = { version: string; changelog: string; update_date: string; url: string };
+
+const PATIENTS_PER_PAGE = 5;
 
 function MarkdownChangelog({ value }: { value: string }) {
   return <div className="release-changelog">{value.split(/\r?\n/).map((line, index) => {
@@ -501,6 +505,12 @@ function Icon({ name }: { name: string }) {
         <path d="M6 14h12v8H6z" />
       </>
     ),
+    dollar: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M16 8.5c-.8-.9-2-1.5-3.5-1.5-2 0-3.5 1.1-3.5 2.6 0 1.7 1.6 2.3 3.5 2.7 1.9.4 3.5 1 3.5 2.7 0 1.6-1.6 2.8-3.7 2.8-1.7 0-3.2-.7-4.3-1.9M12 5v14" />
+      </>
+    ),
     file: (
       <>
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -610,7 +620,7 @@ function ActionButton({
 export default function Home() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"loading" | "login" | "onboarding" | "app">("loading");
-  const [settings, setSettings] = useState<AppSettings>({ audiologistName: "", printThemeColor: "#5F7DC9", headerUrl: "/header.png", onboardingComplete: false });
+  const [settings, setSettings] = useState<AppSettings>({ audiologistName: "", printThemeColor: "#5F7DC9", headerUrl: "/header.png", onboardingComplete: false, testFees: [] });
   const [view, setView] = useState<"dashboard" | "wizard" | "settings">("dashboard");
   const [step, setStep] = useState(1);
   const [records, setRecords] = useState<RecordItem[]>([]);
@@ -618,6 +628,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [patientPage, setPatientPage] = useState(1);
   const [toast, setToast] = useState("");
   const [printRecord, setPrintRecord] = useState<RecordItem | null>(null);
   const [saving, setSaving] = useState(false);
@@ -625,6 +636,46 @@ export default function Home() {
   const [releaseNotes, setReleaseNotes] = useState<ReleaseNotes | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RecordItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [invoiceRecord, setInvoiceRecord] = useState<RecordItem | null>(null);
+  const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft | null>(null);
+  const [invoiceToPrint, setInvoiceToPrint] = useState<InvoiceDraft | null>(null);
+
+  useEffect(() => {
+    const clearPrintedInvoice = () => setInvoiceToPrint(null);
+    window.addEventListener("afterprint", clearPrintedInvoice);
+    return () => window.removeEventListener("afterprint", clearPrintedInvoice);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!invoiceToPrint) return;
+    const printPageStyle = document.createElement("style");
+    printPageStyle.id = "invoice-a5-page-size";
+    printPageStyle.textContent = "@page { size: 148mm 210mm; margin: 0; }";
+    document.head.appendChild(printPageStyle);
+    document.documentElement.classList.add("invoice-page-size");
+    document.body.classList.add("invoice-page-size");
+    return () => {
+      printPageStyle.remove();
+      document.documentElement.classList.remove("invoice-page-size");
+      document.body.classList.remove("invoice-page-size");
+    };
+  }, [invoiceToPrint]);
+
+  const openInvoice = (record: RecordItem) => {
+    const hasTympanometry = Boolean(record.right.tympanometry || record.left.tympanometry);
+    const hasAudiometry = Boolean(record.right.audiometry || record.left.audiometry);
+    const selected = settings.testFees.filter((test) =>
+      (test.name.toLowerCase().includes("tymp") && hasTympanometry) ||
+      (test.name.toLowerCase().includes("audio") && hasAudiometry),
+    );
+    setInvoiceRecord(record);
+    setInvoiceDraft({
+      honorific: record.gender === "female" ? "سرکار خانم" : "جناب آقای",
+      patientName: record.fullName,
+      date: new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Tehran" }).format(new Date()),
+      items: selected,
+    });
+  };
 
   useEffect(() => {
     if (!window.desktop || new URLSearchParams(window.location.search).has("printRecord")) return;
@@ -761,18 +812,30 @@ export default function Home() {
           .replaceAll("/", "-");
       const start = dateKey(startDate);
       const end = dateKey(endDate);
-      return records.filter((record) => {
-        const updatedDate = tehranDateFilePart(record.updatedAt);
-        return (
-          `${record.fullName} ${record.nationalId} ${record.phoneNumber || ""} ${record.doctorName}`.includes(
-            query,
-          ) &&
-          (!start || updatedDate >= start) &&
-          (!end || updatedDate <= end)
-        );
-      });
+      return records
+        .filter((record) => {
+          const updatedDate = tehranDateFilePart(record.updatedAt);
+          return (
+            `${record.fullName} ${record.nationalId} ${record.phoneNumber || ""} ${record.doctorName}`.includes(
+              query,
+            ) &&
+            (!start || updatedDate >= start) &&
+            (!end || updatedDate <= end)
+          );
+        })
+        .sort((a, b) => {
+          const aTime = Date.parse(a.updatedAt);
+          const bTime = Date.parse(b.updatedAt);
+          return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+        });
     },
     [records, query, startDate, endDate],
+  );
+  const patientPageCount = Math.max(1, Math.ceil(filtered.length / PATIENTS_PER_PAGE));
+  const activePatientPage = Math.min(patientPage, patientPageCount);
+  const paginatedPatients = filtered.slice(
+    (activePatientPage - 1) * PATIENTS_PER_PAGE,
+    activePatientPage * PATIENTS_PER_PAGE,
   );
   const notify = (message: string) => {
     setToast(message);
@@ -880,6 +943,13 @@ export default function Home() {
       </main>
     );
 
+  if (invoiceToPrint)
+    return (
+      <main className="invoice-print-mode" dir="rtl">
+        <InvoicePrint draft={invoiceToPrint} headerUrl={settings.headerUrl} />
+      </main>
+    );
+
   if (authMode === "loading") return <main className="login-page" dir="rtl"><section className="login-card"><p>در حال آماده‌سازی برنامه…</p></section></main>;
 
   if (!loggedIn || authMode === "login")
@@ -906,6 +976,38 @@ export default function Home() {
           <button className="primary" autoFocus onClick={() => void window.desktop?.acknowledgeRelease(releaseNotes.version).then(() => setReleaseNotes(null))}>بستن و ادامه</button>
         </section>
       </div>}
+      {invoiceRecord && invoiceDraft && <InvoiceModal
+        record={invoiceRecord}
+        draft={invoiceDraft}
+        availableTests={settings.testFees}
+        onChange={setInvoiceDraft}
+        onClose={() => { setInvoiceRecord(null); setInvoiceDraft(null); }}
+        onPrint={() => {
+          if (!invoiceDraft.patientName.trim() || !invoiceDraft.date.trim() || !invoiceDraft.items.length || invoiceDraft.items.some((item) => item.price == null)) {
+            notify("نام بیمار، تاریخ و مبلغ تست‌های فاکتور را کامل کنید");
+            return;
+          }
+          setInvoiceToPrint(invoiceDraft);
+          setTimeout(() => {
+            void (async () => {
+              await document.fonts.ready;
+              const letterhead = document.querySelector<HTMLImageElement>(".invoice-print-letterhead");
+              if (letterhead && !letterhead.complete) {
+                await Promise.race([
+                  new Promise<void>((resolve) => {
+                    letterhead.addEventListener("load", () => resolve(), { once: true });
+                    letterhead.addEventListener("error", () => resolve(), { once: true });
+                  }),
+                  new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+                ]);
+              } else if (letterhead?.naturalWidth) {
+                await letterhead.decode().catch(() => {});
+              }
+              window.print();
+            })();
+          }, 0);
+        }}
+      />}
       {deleteTarget && (
         <div className="delete-modal-backdrop" role="presentation">
           <section className="delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-modal-title" aria-describedby="delete-modal-description">
@@ -1025,7 +1127,10 @@ export default function Home() {
                   <Icon name="search" />
                   <input
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setPatientPage(1);
+                    }}
                     placeholder="جستجو نام، کد ملی یا پزشک..."
                   />
                 </label>
@@ -1037,7 +1142,10 @@ export default function Home() {
                   <div className="date-filter-field" style={{ width: 150 }}>
                     <BirthDatePicker
                       value={startDate}
-                      onChange={setStartDate}
+                      onChange={(value) => {
+                        setStartDate(value);
+                        setPatientPage(1);
+                      }}
                       placeholder="از تاریخ"
                       ariaLabel="انتخاب تاریخ شروع"
                       compact
@@ -1046,7 +1154,10 @@ export default function Home() {
                   <div className="date-filter-field" style={{ width: 150 }}>
                     <BirthDatePicker
                       value={endDate}
-                      onChange={setEndDate}
+                      onChange={(value) => {
+                        setEndDate(value);
+                        setPatientPage(1);
+                      }}
                       placeholder="تا تاریخ"
                       ariaLabel="انتخاب تاریخ پایان"
                       compact
@@ -1069,6 +1180,7 @@ export default function Home() {
                       onClick={() => {
                         setStartDate("");
                         setEndDate("");
+                        setPatientPage(1);
                       }}
                     >
                       ×
@@ -1090,7 +1202,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r) => (
+                  {paginatedPatients.map((r) => (
                     <tr key={r.id}>
                       <td>
                         <div className="patient">
@@ -1128,6 +1240,11 @@ export default function Home() {
                             }}
                           />
                           <ActionButton
+                            icon="dollar"
+                            label="صدور فاکتور"
+                            onClick={() => openInvoice(r)}
+                          />
+                          <ActionButton
                             icon="trash"
                             label="حذف"
                             onClick={() => setDeleteTarget(r)}
@@ -1139,6 +1256,27 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+            {filtered.length > PATIENTS_PER_PAGE && (
+              <nav className="patient-pagination" aria-label="صفحه‌بندی فهرست بیماران">
+                <button
+                  type="button"
+                  onClick={() => setPatientPage(activePatientPage - 1)}
+                  disabled={activePatientPage === 1}
+                >
+                  قبلی
+                </button>
+                <span aria-live="polite">
+                  صفحه {activePatientPage.toLocaleString("fa-IR")} از {patientPageCount.toLocaleString("fa-IR")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPatientPage(activePatientPage + 1)}
+                  disabled={activePatientPage === patientPageCount}
+                >
+                  بعدی
+                </button>
+              </nav>
+            )}
           </div>
         </section>
       ) : (
@@ -1188,7 +1326,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
       <label>نام و نام خانوادگی شنوایی‌شناس<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
       <label>رمز عبور جدید<input required minLength={10} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
       <label>تکرار رمز عبور<input required minLength={10} type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
-      <label>تصویر سربرگ (دقیقاً ۲۴۸۰×۲۳۰ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
+      <label>تصویر سربرگ (عرض ۲۴۸۰ و حداکثر ارتفاع ۴۰۰ پیکسل)<input required type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setHeader(event.target.files?.[0] || null)} /></label>
       {error && <p className="login-error" role="alert">{error}</p>}
       <button className="primary wide" disabled={saving}>{saving ? "در حال ذخیره…" : "تکمیل راه‌اندازی"}</button>
     </form>
@@ -1198,6 +1336,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
 function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onSettings: (settings: AppSettings) => void; onBack: () => void }) {
   const [name, setName] = useState(settings.audiologistName);
   const [themeColor, setThemeColor] = useState(settings.printThemeColor);
+  const [testFees, setTestFees] = useState<TestFee[]>(settings.testFees || []);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirmation, setNewPasswordConfirmation] = useState("");
@@ -1226,18 +1365,72 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
     const response = await fetch("/api/settings/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) }); const body = await response.json() as { error?: string };
     if (!response.ok) return setMessage(body.error || "تغییر رمز ناموفق بود."); setMessage("رمز تغییر کرد؛ لطفاً دوباره وارد شوید."); setTimeout(() => location.reload(), 1000);
   };
+  const saveTestFees = async () => {
+    if (!testFees.length || testFees.some((test) => !test.name.trim() || test.price == null || test.price < 0)) return setMessage("نام و هزینه همه تست‌ها را کامل کنید.");
+    const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiologistName: name, printThemeColor: themeColor, testFees }) });
+    const body = await response.json() as AppSettings & { error?: string };
+    if (!response.ok) return setMessage(body.error || "ذخیره هزینه‌ها ناموفق بود.");
+    onSettings(body); setTestFees(body.testFees); setMessage("هزینه تست‌ها ذخیره شد.");
+  };
   return <section className="shell settings-page" dir="rtl">
     <div className="hero-row"><div><p className="eyebrow">مدیریت برنامه</p><h1>تنظیمات</h1></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
     <div className="settings-grid">
-      <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>تم رنگی چاپ و PDF<div className="theme-color-field"><input type="color" value={/^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : "#5F7DC9"} onChange={(e) => setThemeColor(e.target.value.toUpperCase())} aria-label="انتخاب تم رنگی" /><input dir="ltr" value={themeColor} maxLength={7} placeholder="#5F7DC9" pattern="#[0-9A-Fa-f]{6}" onChange={(e) => setThemeColor(e.target.value)} aria-label="کد تم رنگی" /></div><small>کد رنگ را به شکل #RRGGBB وارد کنید. رنگ‌های پزشکی گوش راست و چپ تغییر نمی‌کنند.</small></label><button className="primary" onClick={saveName}>ذخیره مشخصات و تم رنگی</button><label>تصویر سربرگ چاپ (۲۴۸۰×۲۳۰ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
+      <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>تم رنگی چاپ و PDF<div className="theme-color-field"><input type="color" value={/^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : "#5F7DC9"} onChange={(e) => setThemeColor(e.target.value.toUpperCase())} aria-label="انتخاب تم رنگی" /><input dir="ltr" value={themeColor} maxLength={7} placeholder="#5F7DC9" pattern="#[0-9A-Fa-f]{6}" onChange={(e) => setThemeColor(e.target.value)} aria-label="کد تم رنگی" /></div><small>کد رنگ را به شکل #RRGGBB وارد کنید. رنگ‌های پزشکی گوش راست و چپ تغییر نمی‌کنند.</small></label><button className="primary" onClick={saveName}>ذخیره مشخصات و تم رنگی</button><label>تصویر سربرگ چاپ (عرض ۲۴۸۰ و حداکثر ارتفاع ۴۰۰ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
       <article className="form-card"><h2>تغییر رمز عبور</h2>
         <label>رمز فعلی<div className="password"><input required autoComplete="current-password" type={visiblePasswords.current ? "text" : "password"} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.current ? "پنهان کردن رمز فعلی" : "نمایش رمز فعلی"} onClick={() => setVisiblePasswords((state) => ({ ...state, current: !state.current }))}><Icon name="eye" /></button></div></label>
         <label>رمز جدید<div className="password"><input required minLength={10} autoComplete="new-password" type={visiblePasswords.new ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.new ? "پنهان کردن رمز جدید" : "نمایش رمز جدید"} onClick={() => setVisiblePasswords((state) => ({ ...state, new: !state.new }))}><Icon name="eye" /></button></div></label>
         <label>تکرار رمز جدید<div className="password"><input required minLength={10} autoComplete="new-password" type={visiblePasswords.confirmation ? "text" : "password"} value={newPasswordConfirmation} onChange={(e) => setNewPasswordConfirmation(e.target.value)} /><button type="button" aria-label={visiblePasswords.confirmation ? "پنهان کردن تکرار رمز جدید" : "نمایش تکرار رمز جدید"} onClick={() => setVisiblePasswords((state) => ({ ...state, confirmation: !state.confirmation }))}><Icon name="eye" /></button></div></label>
         <button className="primary" onClick={changePassword}>تغییر رمز</button>
       </article>
+      <article className="form-card test-fees-card">
+        <div className="settings-card-heading"><div><h2>هزینه تست‌ها</h2><p>مبلغ هر تست را به ریال ثبت کنید؛ این مبالغ هنگام صدور فاکتور قابل ویرایش‌اند.</p></div><button className="secondary" type="button" onClick={() => setTestFees((items) => [...items, { id: crypto.randomUUID(), name: "", price: null }])}><Icon name="plus" /> افزودن تست</button></div>
+        <div className="test-fees-list">
+          {testFees.map((test, index) => <div className="test-fee-row" key={test.id}>
+            <label>نام تست<input readOnly={test.id === "tympanometry" || test.id === "audiometry"} value={test.name} placeholder="نام تست" onChange={(event) => setTestFees((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} /></label>
+            <label>هزینه (ریال)<input type="number" min="0" step="1" value={test.price ?? ""} placeholder="مثلاً ۱٬۵۰۰٬۰۰۰" onChange={(event) => setTestFees((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, price: event.target.value === "" ? null : Number(event.target.value) } : item))} /></label>
+            <button className="icon-btn test-fee-delete" type="button" aria-label={`حذف تست ${test.name || index + 1}`} title="حذف تست" disabled={testFees.length <= 1 || test.id === "tympanometry" || test.id === "audiometry"} onClick={() => setTestFees((items) => items.filter((_, itemIndex) => itemIndex !== index))}><Icon name="trash" /></button>
+          </div>)}
+        </div>
+        <button className="primary" type="button" onClick={saveTestFees}>ذخیره هزینه تست‌ها</button>
+      </article>
       <article className="form-card"><h2>مجوز و به‌روزرسانی</h2><p>نسخه فعلی: {desktopInfo.version || "نسخه وب"}</p>{desktopInfo.licenseId && <p dir="ltr">License: {desktopInfo.licenseId}<br />Device: {desktopInfo.deviceId}</p>}<p>وضعیت: {updateState}</p>{updateInfo && <div className="update-details"><p><strong>آخرین نسخه: {updateInfo.version}</strong></p><p>تاریخ انتشار: {new Date(updateInfo.update_date).toLocaleDateString("fa-IR")}</p><MarkdownChangelog value={updateInfo.changelog} /></div>}<button className="primary" disabled={typeof window === "undefined" || !window.desktop} onClick={() => void window.desktop?.checkForUpdates()}>بررسی به‌روزرسانی</button>{updateState === "آماده نصب" && <button className="secondary" onClick={() => window.desktop?.installUpdate()}>نصب و راه‌اندازی مجدد</button>}</article>
     </div>{message && <div className="toast">{message}</div>}
+  </section>;
+}
+
+function formatMoney(value: number) { return value.toLocaleString("fa-IR"); }
+
+function InvoiceModal({ draft, availableTests, onChange, onClose, onPrint }: { record: RecordItem; draft: InvoiceDraft; availableTests: TestFee[]; onChange: (draft: InvoiceDraft) => void; onClose: () => void; onPrint: () => void }) {
+  const total = draft.items.reduce((sum, item) => sum + (item.price || 0), 0);
+  const toggleTest = (test: TestFee) => onChange({ ...draft, items: draft.items.some((item) => item.id === test.id) ? draft.items.filter((item) => item.id !== test.id) : [...draft.items, test] });
+  return <div className="invoice-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="invoice-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-modal-title">
+      <div className="invoice-modal-heading"><div><p className="eyebrow">صدور رسید</p><h2 id="invoice-modal-title">فاکتور بیمار</h2></div><button className="invoice-close" type="button" aria-label="بستن" onClick={onClose}>×</button></div>
+      <div className="invoice-fields">
+        <label>عنوان<select value={draft.honorific} onChange={(event) => onChange({ ...draft, honorific: event.target.value as InvoiceDraft["honorific"] })}><option>سرکار خانم</option><option>جناب آقای</option></select></label>
+        <label>نام و نام خانوادگی بیمار<input autoFocus value={draft.patientName} onChange={(event) => onChange({ ...draft, patientName: event.target.value })} /></label>
+        <label>تاریخ<input dir="rtl" value={draft.date} onChange={(event) => onChange({ ...draft, date: event.target.value })} /></label>
+      </div>
+      <fieldset className="invoice-tests"><legend>تست‌های انجام‌شده</legend><div className="invoice-test-options">{availableTests.map((test) => <label key={test.id}><input type="checkbox" checked={draft.items.some((item) => item.id === test.id)} onChange={() => toggleTest(test)} /><span>{test.name}</span><small>{test.price == null ? "بدون هزینه ثبت‌شده" : `${formatMoney(test.price)} ریال`}</small></label>)}</div></fieldset>
+      {draft.items.length > 0 && <div className="invoice-items-editor">{draft.items.map((item) => <label key={item.id}><span>{item.name}</span><div><input type="number" min="0" step="1" value={item.price ?? ""} aria-label={`هزینه ${item.name}`} onChange={(event) => onChange({ ...draft, items: draft.items.map((selected) => selected.id === item.id ? { ...selected, price: event.target.value === "" ? null : Number(event.target.value) } : selected) })} /><small>ریال</small></div></label>)}</div>}
+      <div className="invoice-total"><span>جمع کل</span><strong>{formatMoney(total)} ریال</strong><small>معادل {formatMoney(Math.round(total / 10))} تومان</small></div>
+      <div className="invoice-modal-actions"><button className="secondary" type="button" onClick={onClose}>انصراف</button><button className="primary" type="button" onClick={onPrint}><Icon name="print" /> چاپ فاکتور A5</button></div>
+    </section>
+  </div>;
+}
+
+function InvoicePrint({ draft, headerUrl }: { draft: InvoiceDraft; headerUrl: string }) {
+  const total = draft.items.reduce((sum, item) => sum + (item.price || 0), 0);
+  return <section className="invoice-print" dir="rtl">
+    <img className="invoice-print-letterhead" src={headerUrl} alt="سربرگ مرکز شنوایی‌سنجی" />
+    <div className="invoice-print-body">
+      <div className="invoice-bismillah">بسمه تعالی</div>
+      <div className="invoice-spacer" aria-hidden="true" />
+      <h1>رسید دریافت وجه</h1>
+      <p className="invoice-receipt-text">از {draft.honorific} <strong>{draft.patientName}</strong> مبلغ <strong>{formatMoney(total)}</strong> ریال معادل <strong>{formatMoney(Math.round(total / 10))}</strong> تومان بابت تست‌های زیر دریافت گردید.</p>
+      <table><thead><tr><th>ردیف</th><th>شرح تست</th><th>مبلغ (ریال)</th></tr></thead><tbody>{draft.items.map((item, index) => <tr key={item.id}><td>{(index + 1).toLocaleString("fa-IR")}</td><td>{item.name}</td><td>{formatMoney(item.price || 0)}</td></tr>)}</tbody><tfoot><tr><td colSpan={2}>جمع کل</td><td>{formatMoney(total)}</td></tr></tfoot></table>
+      <div className="invoice-print-footer"><div><span>تاریخ</span><strong>{draft.date}</strong></div><div><span>مهر و امضا</span></div></div>
+    </div>
   </section>;
 }
 
@@ -2327,16 +2520,46 @@ function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; he
               <div className="print-ear-grid">
                 {sides.filter(hasOtoscopy).map((side) => (
                   <article className={`print-ear ${side}`} key={side}>
-                    <h2>
-                      <span>{side === "right" ? "R" : "L"}</span> گوش{" "}
-                      {side === "right" ? "راست" : "چپ"}
-                    </h2>
                     {record[side].imageDataUrl && (
-                      <img
-                        className="print-otoscopy-image"
-                        src={record[side].imageDataUrl}
-                        alt={`تصویر اتوسکوپی گوش ${side === "right" ? "راست" : "چپ"}`}
-                      />
+                      <div className="print-otoscopy-image-wrap">
+                        <img
+                          className="print-otoscopy-image"
+                          src={record[side].imageDataUrl}
+                          alt={`تصویر اتوسکوپی گوش ${side === "right" ? "راست" : "چپ"}`}
+                          style={{
+                            gridArea: "1 / 1",
+                            alignSelf: "center",
+                            justifySelf: "center",
+                            width: "auto",
+                            height: "58mm",
+                            maxWidth: "none",
+                          }}
+                        />
+                        <span
+                          className="print-otoscopy-ear-badge"
+                          style={{
+                            gridArea: "1 / 1",
+                            alignSelf: "start",
+                            justifySelf: "end",
+                            zIndex: 2,
+                            display: "grid",
+                            placeItems: "center",
+                            width: "8mm",
+                            height: "6mm",
+                            margin: "2mm",
+                            border: `1px solid ${side === "right" ? "#f3b8b8" : "#c5d1f2"}`,
+                            borderRadius: "1.8mm",
+                            backgroundColor:
+                              side === "right" ? "#fff0f0" : "#eef3ff",
+                            color: side === "right" ? "#d84a4a" : "#5f7dc9",
+                            font: "800 8pt/1 Arial, sans-serif",
+                            boxShadow:
+                              "0 0.4mm 1.5mm rgba(15, 23, 42, 0.2)",
+                          }}
+                        >
+                          {side === "right" ? "RE" : "LE"}
+                        </span>
+                      </div>
                     )}
                     {hasText(record[side].result) && (
                       <div
@@ -2372,10 +2595,6 @@ function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; he
                     hasText(value.staticCompliance));
                 return (
                   <article className={`print-ear ${side}`} key={side}>
-                    <h2>
-                      <span>{side === "right" ? "R" : "L"}</span> گوش{" "}
-                      {side === "right" ? "راست" : "چپ"}
-                    </h2>
                     {showChart && (
                       <TympanometrySummaryChart side={side} value={value} />
                     )}
