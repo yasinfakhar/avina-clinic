@@ -9,14 +9,17 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { BirthDatePicker } from "./components/BirthDatePicker";
+import { BirthDatePicker, jalaliDateTimeToIso } from "./components/BirthDatePicker";
 import { AutocompleteInput } from "./components/AutocompleteInput";
 import { ImageAnnotator } from "./components/ImageAnnotator";
 import { dataUrlToBlob } from "./image-data";
+import { toEnglishDigits } from "./digits";
+import { sanitizeEnglishName, sanitizePersianName } from "./name-input";
 import {
   currentTimestamp,
+  formatTehranDate,
   formatTehranDateTime,
-  tehranDateFilePart,
+  formatTehranLiveDateTime,
 } from "./tehran-time";
 
 type Arrow = {
@@ -26,6 +29,28 @@ type Arrow = {
   endY: number;
   normalized?: boolean;
 };
+
+function HeaderClock() {
+  const [timestamp, setTimestamp] = useState("");
+
+  useEffect(() => {
+    const update = () => setTimestamp(currentTimestamp());
+    update();
+    const interval = window.setInterval(update, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return (
+    <time
+      className="header-clock"
+      dateTime={timestamp || undefined}
+      aria-label="تاریخ و ساعت فعلی"
+      suppressHydrationWarning
+    >
+      {timestamp ? formatTehranLiveDateTime(timestamp) : "در حال دریافت زمان…"}
+    </time>
+  );
+}
 type TympanometryPoint = { pressure: number; compliance: number };
 type ReflexValues = { hz500: string; hz1k: string; hz2k: string; hz4k: string };
 type Tympanometry = {
@@ -76,10 +101,12 @@ type RecordItem = {
   id: string;
   doctorName: string;
   fullName: string;
+  persianFullName: string;
   nationalId: string;
   phoneNumber: string;
   gender: Gender;
   birthDate: string;
+  visitDate: string;
   right: Ear;
   left: Ear;
   audiometricTests?: AudiometricTests;
@@ -90,6 +117,10 @@ type RecordItem = {
 type TestFee = { id: string; name: string; price: number | null };
 type AppSettings = { audiologistName: string; printThemeColor: string; headerUrl: string; onboardingComplete: boolean; testFees: TestFee[] };
 type InvoiceDraft = { honorific: "سرکار خانم" | "جناب آقای"; patientName: string; date: string; items: TestFee[] };
+type PatientReminder = { id: string; text: string; remindAt: string; read: boolean };
+type PatientNote = { recordId: string; note: string; reminders: PatientReminder[]; updatedAt: string };
+type ReminderDraft = { id: string; text: string; date: string; time: string };
+type NoteDraft = { note: string; reminders: ReminderDraft[] };
 type ReleaseNotes = { version: string; changelog: string; update_date: string; url: string };
 
 const PATIENTS_PER_PAGE = 5;
@@ -108,10 +139,12 @@ const emptyRecord = (): RecordItem => ({
   id: `A-${Date.now().toString().slice(-6)}`,
   doctorName: "",
   fullName: "",
+  persianFullName: "",
   nationalId: "",
   phoneNumber: "",
   gender: "",
   birthDate: "",
+  visitDate: formatTehranDate(),
   right: {
     result: "",
     imageName: "",
@@ -129,6 +162,12 @@ const emptyRecord = (): RecordItem => ({
   audiometricTests: emptyAudiometricTests(),
   status: "draft",
   updatedAt: currentTimestamp(),
+});
+const normalizeRecord = (record: RecordItem): RecordItem => ({
+  ...record,
+  persianFullName: record.persianFullName || "",
+  phoneNumber: record.phoneNumber || "",
+  visitDate: record.visitDate || formatTehranDate(record.updatedAt),
 });
 const emptyReflex = (): ReflexValues => ({
   hz500: "",
@@ -268,7 +307,7 @@ async function uploadPatientImage(
 }
 
 async function migrateBrowserRecord(record: RecordItem) {
-  const migrated: RecordItem = JSON.parse(JSON.stringify(record));
+  const migrated: RecordItem = normalizeRecord(JSON.parse(JSON.stringify(record)));
   const sources = {
     right: {
       original: migrated.right.originalImageDataUrl,
@@ -345,6 +384,29 @@ function calculateAge(birthDate: string) {
 
 function genderLabel(gender: Gender) {
   return gender === "male" ? "Male" : gender === "female" ? "Female" : "";
+}
+
+function localTimeInput(value: string) {
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(11, 16);
+}
+
+const persianClockPart = (value: number) =>
+  String(value).padStart(2, "0").replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[Number(digit)]);
+
+function ReminderTimePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [hour = "09", minute = "00"] = value.split(":");
+  return <div className="reminder-time-picker" role="group" aria-label="انتخاب ساعت یادآوری">
+    <Icon name="clock" />
+    <select aria-label="دقیقه" value={minute} onChange={(event) => onChange(`${hour}:${event.target.value}`)}>
+      {Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0")).map((item) => <option key={item} value={item}>{persianClockPart(Number(item))}</option>)}
+    </select>
+    <span aria-hidden="true">:</span>
+    <select aria-label="ساعت" value={hour} onChange={(event) => onChange(`${event.target.value}:${minute}`)}>
+      {Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0")).map((item) => <option key={item} value={item}>{persianClockPart(Number(item))}</option>)}
+    </select>
+  </div>;
 }
 
 function isValidAudiometryThreshold(value: string) {
@@ -488,6 +550,12 @@ function Icon({ name }: { name: string }) {
         <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
       </>
     ),
+    person: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </>
+    ),
     plus: (
       <>
         <path d="M12 5v14M5 12h14" />
@@ -579,6 +647,25 @@ function Icon({ name }: { name: string }) {
         <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.37.36.7.64.96.3.27.68.42 1.08.44H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z" />
       </>
     ),
+    bell: (
+      <>
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+        <path d="M10 21h4" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    close: <path d="m7 7 10 10M17 7 7 17" />,
+    note: (
+      <>
+        <path d="M4 4h16v16H4z" />
+        <path d="M8 9h8M8 13h8M8 17h5" />
+      </>
+    ),
     check: <path d="m5 12 4 4L19 6" />,
   };
   return (
@@ -639,6 +726,12 @@ export default function Home() {
   const [invoiceRecord, setInvoiceRecord] = useState<RecordItem | null>(null);
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft | null>(null);
   const [invoiceToPrint, setInvoiceToPrint] = useState<InvoiceDraft | null>(null);
+  const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
+  const [noteTarget, setNoteTarget] = useState<RecordItem | null>(null);
+  const [noteDraft, setNoteDraft] = useState<NoteDraft>({ note: "", reminders: [] });
+  const [savingNote, setSavingNote] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [clock, setClock] = useState(0);
 
   useEffect(() => {
     const clearPrintedInvoice = () => setInvoiceToPrint(null);
@@ -671,7 +764,7 @@ export default function Home() {
     setInvoiceRecord(record);
     setInvoiceDraft({
       honorific: record.gender === "female" ? "سرکار خانم" : "جناب آقای",
-      patientName: record.fullName,
+      patientName: record.persianFullName.trim() || record.fullName,
       date: new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Tehran" }).format(new Date()),
       items: selected,
     });
@@ -706,6 +799,30 @@ export default function Home() {
 
   useEffect(() => {
     if (!loggedIn || authMode !== "app") return;
+    void fetch("/api/patient-notes", { cache: "no-store" })
+      .then((response) => { if (!response.ok) throw new Error(); return response.json() as Promise<{ notes: PatientNote[] }>; })
+      .then(({ notes }) => setPatientNotes(notes))
+      .catch(() => setToast("خواندن یادداشت‌ها و یادآوری‌ها ناموفق بود"));
+    const initialTick = window.setTimeout(() => setClock(Date.now()), 0);
+    const interval = window.setInterval(() => setClock(Date.now()), 30_000);
+    return () => { window.clearTimeout(initialTick); window.clearInterval(interval); };
+  }, [loggedIn, authMode]);
+
+  useEffect(() => {
+    if (!loggedIn || authMode !== "app") return;
+    const now = Date.now();
+    const nextReminder = patientNotes
+      .flatMap((item) => item.reminders)
+      .filter((item) => !item.read && Date.parse(item.remindAt) > now)
+      .sort((a, b) => Date.parse(a.remindAt) - Date.parse(b.remindAt))[0];
+    if (!nextReminder) return;
+    const delay = Math.min(Date.parse(nextReminder.remindAt) - now, 2_147_000_000);
+    const timer = window.setTimeout(() => setClock(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [patientNotes, loggedIn, authMode]);
+
+  useEffect(() => {
+    if (!loggedIn || authMode !== "app") return;
     void fetch("/api/otoscopy-results", { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error();
@@ -717,6 +834,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!loggedIn || authMode !== "app") return;
+    const serializedInvoice = new URLSearchParams(window.location.search).get("printInvoice");
+    if (serializedInvoice) {
+      try { setInvoiceToPrint(JSON.parse(serializedInvoice) as InvoiceDraft); } catch {}
+      return;
+    }
     let cancelled = false;
     const printRecordId = new URLSearchParams(window.location.search).get(
       "printRecord",
@@ -730,7 +852,7 @@ export default function Home() {
           return response.json() as Promise<{ record: RecordItem }>;
         })
         .then(({ record }) => {
-          if (!cancelled) setPrintRecord(record);
+          if (!cancelled) setPrintRecord(normalizeRecord(record));
         });
       return () => {
         cancelled = true;
@@ -751,6 +873,7 @@ export default function Home() {
                 doctorName: record.doctorName || fileName || "",
                 phoneNumber: record.phoneNumber || "",
                 gender: record.gender || "",
+                visitDate: record.visitDate || formatTehranDate(record.updatedAt),
               }),
             );
           }
@@ -764,10 +887,7 @@ export default function Home() {
         if (!cancelled) {
           startTransition(() =>
             setRecords(
-              data.records.map((record) => ({
-                ...record,
-                phoneNumber: record.phoneNumber || "",
-              })),
+              data.records.map(normalizeRecord),
             ),
           );
         }
@@ -814,19 +934,25 @@ export default function Home() {
       const end = dateKey(endDate);
       return records
         .filter((record) => {
-          const updatedDate = tehranDateFilePart(record.updatedAt);
+          const visitDate = dateKey(
+            record.visitDate || formatTehranDate(record.updatedAt),
+          );
           return (
             `${record.fullName} ${record.nationalId} ${record.phoneNumber || ""} ${record.doctorName}`.includes(
               query,
             ) &&
-            (!start || updatedDate >= start) &&
-            (!end || updatedDate <= end)
+            (!start || visitDate >= start) &&
+            (!end || visitDate <= end)
           );
         })
         .sort((a, b) => {
-          const aTime = Date.parse(a.updatedAt);
-          const bTime = Date.parse(b.updatedAt);
-          return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+          const byVisitDate = dateKey(
+            b.visitDate || formatTehranDate(b.updatedAt),
+          ).localeCompare(
+            dateKey(a.visitDate || formatTehranDate(a.updatedAt)),
+          );
+          if (byVisitDate !== 0) return byVisitDate;
+          return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
         });
     },
     [records, query, startDate, endDate],
@@ -840,6 +966,40 @@ export default function Home() {
   const notify = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(""), 2600);
+  };
+  const dueNotifications = patientNotes.flatMap((item) => item.reminders.map((reminder) => ({ ...reminder, recordId: item.recordId }))).filter((item) => Date.parse(item.remindAt) <= clock);
+  const unreadNotificationCount = dueNotifications.filter((item) => !item.read).length;
+  const activeReminder = dueNotifications.find((item) => !item.read);
+  const activeReminderPatient = activeReminder ? records.find((record) => record.id === activeReminder.recordId) : undefined;
+  const openNote = (record: RecordItem) => {
+    const saved = patientNotes.find((item) => item.recordId === record.id);
+    setNoteTarget(record);
+    setNoteDraft({
+      note: saved?.note || "",
+      reminders: (saved?.reminders || []).map((item) => ({ id: item.id, text: item.text, date: formatTehranDate(item.remindAt), time: localTimeInput(item.remindAt) })),
+    });
+  };
+  const savePatientNote = async () => {
+    if (!noteTarget || savingNote) return;
+    const reminders = noteDraft.reminders.map((item) => ({ id: item.id, text: item.text.trim(), remindAt: jalaliDateTimeToIso(item.date, item.time) }));
+    if (reminders.some((item) => !item.text || !item.remindAt)) return notify("متن، تاریخ شمسی و ساعت همه یادآوری‌ها را کامل کنید");
+    setSavingNote(true);
+    try {
+      const response = await fetch("/api/patient-notes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recordId: noteTarget.id, note: noteDraft.note, reminders }),
+      });
+      const body = await response.json() as { note?: PatientNote; error?: string };
+      if (!response.ok || !body.note) throw new Error(body.error);
+      setPatientNotes((previous) => [body.note!, ...previous.filter((item) => item.recordId !== body.note!.recordId)]);
+      setNoteTarget(null);
+      notify("یادداشت بیمار ذخیره شد");
+    } catch { notify("ذخیره یادداشت ناموفق بود"); }
+    finally { setSavingNote(false); }
+  };
+  const markNotificationRead = async (reminderId: string) => {
+    setPatientNotes((previous) => previous.map((item) => ({ ...item, reminders: item.reminders.map((reminder) => reminder.id === reminderId ? { ...reminder, read: true } : reminder) })));
+    await fetch("/api/patient-notes", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reminderId }) }).catch(() => {});
   };
   const saveOtoscopyResult = (rawValue: string) => {
     const value = rawValue.trim();
@@ -875,7 +1035,7 @@ export default function Home() {
     setView("wizard");
   };
   const openRecord = (record: RecordItem) => {
-    setCurrent(record);
+    setCurrent(normalizeRecord(record));
     setStep(record.status === "completed" ? 5 : 1);
     setView("wizard");
   };
@@ -1003,6 +1163,26 @@ export default function Home() {
               } else if (letterhead?.naturalWidth) {
                 await letterhead.decode().catch(() => {});
               }
+              if (window.desktop) {
+                try {
+                  await window.desktop.saveInvoicePdf(invoiceRecord.id);
+                  notify("فاکتور در پوشه factors ذخیره شد");
+                } catch {
+                  notify("ذخیره PDF فاکتور ناموفق بود");
+                }
+              } else {
+                try {
+                  const response = await fetch("/api/invoices", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ recordId: invoiceRecord.id, invoice: invoiceDraft }),
+                  });
+                  if (!response.ok) throw new Error();
+                  notify("فاکتور در پوشه factors ذخیره شد");
+                } catch {
+                  notify("ذخیره PDF فاکتور ناموفق بود");
+                }
+              }
               window.print();
             })();
           }, 0);
@@ -1027,6 +1207,48 @@ export default function Home() {
           </section>
         </div>
       )}
+      {noteTarget && (
+        <div className="note-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setNoteTarget(null); }}>
+          <section className="note-modal" role="dialog" aria-modal="true" aria-labelledby="note-modal-title">
+            <div className="note-modal-heading">
+              <div><p className="eyebrow">یادداشت بیمار</p><h2 id="note-modal-title">{noteTarget.fullName || "بیمار بدون نام"}</h2></div>
+              <button className="invoice-close" type="button" aria-label="بستن" onClick={() => setNoteTarget(null)}>×</button>
+            </div>
+            <label className="note-field">متن یادداشت
+              <textarea autoFocus rows={5} value={noteDraft.note} onChange={(event) => setNoteDraft({ ...noteDraft, note: event.target.value })} placeholder="یادداشت مربوط به این بیمار را بنویسید…" />
+            </label>
+            <fieldset className="reminder-fields">
+              <legend><Icon name="bell" /> یادآوری‌ها</legend>
+              <div className="reminder-list" aria-live="polite">
+                {noteDraft.reminders.map((reminder, index) => <article className="reminder-card" key={reminder.id}>
+                  <header className="reminder-card-header">
+                    <div><span>{(index + 1).toLocaleString("fa-IR")}</span><strong>یادآوری {index + 1}</strong></div>
+                    <button type="button" className="reminder-remove" aria-label={`حذف یادآوری ${index + 1}`} onClick={() => setNoteDraft({ ...noteDraft, reminders: noteDraft.reminders.filter((_, itemIndex) => itemIndex !== index) })}><Icon name="trash" /><span>حذف</span></button>
+                  </header>
+                  <div className="reminder-card-fields">
+                    <label className="reminder-text-field">متن یادآوری
+                      <input value={reminder.text} onChange={(event) => setNoteDraft({ ...noteDraft, reminders: noteDraft.reminders.map((item, itemIndex) => itemIndex === index ? { ...item, text: event.target.value } : item) })} placeholder="مثلاً تماس برای پیگیری سمعک" />
+                    </label>
+                    <label>تاریخ شمسی
+                      <BirthDatePicker value={reminder.date} onChange={(date) => setNoteDraft({ ...noteDraft, reminders: noteDraft.reminders.map((item, itemIndex) => itemIndex === index ? { ...item, date } : item) })} placeholder="۱۴۰۵/۰۷/۱۰" ariaLabel="انتخاب تاریخ شمسی یادآوری" compact />
+                    </label>
+                    <label>ساعت
+                      <ReminderTimePicker value={reminder.time} onChange={(time) => setNoteDraft({ ...noteDraft, reminders: noteDraft.reminders.map((item, itemIndex) => itemIndex === index ? { ...item, time } : item) })} />
+                    </label>
+                  </div>
+                </article>)}
+                {noteDraft.reminders.length === 0 && <p className="reminder-empty">هنوز یادآوری‌ای برای این بیمار ثبت نشده است.</p>}
+              </div>
+              <button type="button" className="secondary reminder-add" onClick={() => setNoteDraft({ ...noteDraft, reminders: [...noteDraft.reminders, { id: crypto.randomUUID(), text: "", date: formatTehranDate(), time: "09:00" }] })}><Icon name="plus" /> افزودن یادآوری</button>
+              <small>برای هر بیمار می‌توانید چند یادآوری با تاریخ شمسی و ساعت متفاوت ثبت کنید.</small>
+            </fieldset>
+            <div className="note-modal-actions">
+              <button type="button" className="secondary" onClick={() => setNoteTarget(null)}>انصراف</button>
+              <button type="button" className="primary" disabled={savingNote} onClick={() => void savePatientNote()}>{savingNote ? "در حال ذخیره…" : "ذخیره یادداشت"}</button>
+            </div>
+          </section>
+        </div>
+      )}
       <header className="topbar">
         <div className="brand">
           <strong className="brand-name">سامانه مدیریت شنوایی شناسی</strong>
@@ -1034,11 +1256,39 @@ export default function Home() {
             {/* <small>سامانه مدیریت شنوایی‌سنجی</small> */}
           </div>
         </div>
+        <div className="header-clock-area">
+          <HeaderClock />
+          {activeReminder && <aside className="header-reminder-alert" role="status" aria-live="assertive">
+            <button type="button" className="header-reminder-main" onClick={() => { void markNotificationRead(activeReminder.id); if (activeReminderPatient) openNote(activeReminderPatient); }}>
+              <span className="header-reminder-icon"><Icon name="bell" /></span>
+              <span className="header-reminder-content"><strong>{activeReminderPatient?.fullName || "یادآوری بیمار"}</strong><span title={activeReminder.text}>{activeReminder.text}</span></span>
+              {unreadNotificationCount > 1 && <b>+{(unreadNotificationCount - 1).toLocaleString("fa-IR")}</b>}
+            </button>
+            <button type="button" className="header-reminder-dismiss" aria-label="خوانده شد" title="خوانده شد" onClick={() => void markNotificationRead(activeReminder.id)}><Icon name="close" /></button>
+          </aside>}
+        </div>
         <div className="profile">
-          <span className="avatar">{settings.audiologistName.trim().charAt(0) || "ش"}</span>
+          <span className="avatar" aria-hidden="true"><Icon name="person" /></span>
           <div>
             <strong>{settings.audiologistName || "شنوایی‌شناس"}</strong>
             <small>Audiologist</small>
+          </div>
+          <div className="notification-wrap">
+            <button className="settings-button notification-button" title="اعلان‌ها" aria-label={`اعلان‌ها${unreadNotificationCount ? `، ${unreadNotificationCount} اعلان جدید` : ""}`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((open) => !open)}>
+              <Icon name="bell" />
+              {unreadNotificationCount > 0 && <span className="notification-badge">{unreadNotificationCount.toLocaleString("fa-IR")}</span>}
+            </button>
+            {notificationsOpen && <section className="notification-panel" aria-label="اعلان‌های یادآوری">
+              <header><strong>اعلان‌ها</strong><small>{dueNotifications.length.toLocaleString("fa-IR")} یادآوری</small></header>
+              <div className="notification-list">
+                {dueNotifications.length === 0 ? <p className="notification-empty">اعلان جدیدی ندارید.</p> : dueNotifications.map((item) => {
+                  const patient = records.find((record) => record.id === item.recordId);
+                  return <button key={item.id} className={item.read ? "read" : "unread"} onClick={() => { void markNotificationRead(item.id); if (patient) openNote(patient); setNotificationsOpen(false); }}>
+                    <span><Icon name="bell" /></span><div><strong>{patient?.fullName || "بیمار"}</strong><p>{item.text}</p><time>{formatTehranDateTime(item.remindAt)}</time></div>
+                  </button>;
+                })}
+              </div>
+            </section>}
           </div>
           <button className="settings-button" title="تنظیمات" aria-label="تنظیمات" onClick={() => setView("settings")}><Icon name="settings" /></button>
           <button
@@ -1136,7 +1386,7 @@ export default function Home() {
                 </label>
                 <div
                   className="date-range"
-                  aria-label="فیلتر تاریخ بروزرسانی"
+                  aria-label="فیلتر تاریخ مراجعه"
                   style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
                 >
                   <div className="date-filter-field" style={{ width: 150 }}>
@@ -1196,7 +1446,7 @@ export default function Home() {
                     <th>بیمار</th>
                     <th>پزشک معالج</th>
                     <th>کد ملی</th>
-                    <th>آخرین بروزرسانی</th>
+                    <th>تاریخ مراجعه</th>
                     <th>وضعیت</th>
                     <th>عملیات</th>
                   </tr>
@@ -1212,7 +1462,7 @@ export default function Home() {
                       </td>
                       <td>{r.doctorName || "—"}</td>
                       <td className="ltr">{r.nationalId || "—"}</td>
-                      <td>{formatTehranDateTime(r.updatedAt)}</td>
+                      <td>{r.visitDate || formatTehranDate(r.updatedAt)}</td>
                       <td>
                         <span className={`badge ${r.status}`}>
                           {r.status === "completed" ? "تکمیل‌شده" : "پیش‌نویس"}
@@ -1243,6 +1493,11 @@ export default function Home() {
                             icon="dollar"
                             label="صدور فاکتور"
                             onClick={() => openInvoice(r)}
+                          />
+                          <ActionButton
+                            icon="note"
+                            label={patientNotes.some((item) => item.recordId === r.id) ? "ویرایش یادداشت و یادآوری" : "ثبت یادداشت و یادآوری"}
+                            onClick={() => openNote(r)}
                           />
                           <ActionButton
                             icon="trash"
@@ -1560,6 +1815,31 @@ function Wizard({
   const audiometricTests = normalizeAudiometricTests(record.audiometricTests);
   const update = (key: keyof RecordItem, value: string) =>
     setRecord((current) => ({ ...current, [key]: value }));
+  const updateDoctorName = (doctorName: string) =>
+    setRecord((current) => ({
+      ...current,
+      doctorName,
+      right: {
+        ...current.right,
+        tympanometry: {
+          ...emptyTympanometry(),
+          ...current.right.tympanometry,
+          dearDoctor: doctorName,
+        },
+      },
+      left: {
+        ...current.left,
+        tympanometry: {
+          ...emptyTympanometry(),
+          ...current.left.tympanometry,
+          dearDoctor: doctorName,
+        },
+      },
+      audiometricTests: {
+        ...normalizeAudiometricTests(current.audiometricTests),
+        dearDoctor: doctorName,
+      },
+    }));
   const updateEar = (side: "right" | "left", patch: Partial<Ear>) =>
     setRecord((current) => ({
       ...current,
@@ -1614,6 +1894,7 @@ function Wizard({
       record.nationalId &&
       record.phoneNumber &&
       record.birthDate &&
+      record.visitDate &&
       record.gender);
   const handleImageUpload = async (
     side: "right" | "left",
@@ -1683,6 +1964,7 @@ function Wizard({
               <button
                 type="button"
                 className={`step ${step >= s.n ? "active" : ""} ${step === s.n ? "current" : ""}`}
+                disabled={s.n > 1 && !canNext}
                 onClick={() => setStep(s.n)}
                 key={s.n}
               >
@@ -1729,12 +2011,29 @@ function Wizard({
               <div className="form-grid">
                 <label>
                   <span>
-                    Full Name <b>*</b>
+                    Full Name (English) <b>*</b>
                   </span>
                   <input
                     value={record.fullName}
-                    onChange={(e) => update("fullName", e.target.value)}
-                    placeholder="نام کامل بیمار"
+                    onChange={(e) =>
+                      update("fullName", sanitizeEnglishName(e.target.value))
+                    }
+                    placeholder="Patient full name"
+                    dir="ltr"
+                  />
+                </label>
+                <label>
+                  <span>Full Name (فارسی)</span>
+                  <input
+                    value={record.persianFullName}
+                    onChange={(e) =>
+                      update(
+                        "persianFullName",
+                        sanitizePersianName(e.target.value),
+                      )
+                    }
+                    placeholder="نام و نام خانوادگی بیمار"
+                    dir="rtl"
                   />
                 </label>
                 <label>
@@ -1743,7 +2042,7 @@ function Wizard({
                   </span>
                   <input
                     value={record.doctorName}
-                    onChange={(e) => update("doctorName", e.target.value)}
+                    onChange={(e) => updateDoctorName(e.target.value)}
                     placeholder="نام پزشک معالج"
                   />
                 </label>
@@ -1754,7 +2053,9 @@ function Wizard({
                   <input
                     className="ltr"
                     value={record.nationalId}
-                    onChange={(e) => update("nationalId", e.target.value)}
+                    onChange={(e) =>
+                      update("nationalId", toEnglishDigits(e.target.value))
+                    }
                     placeholder="۱۰ رقم"
                   />
                 </label>
@@ -1767,7 +2068,9 @@ function Wizard({
                     type="tel"
                     inputMode="tel"
                     value={record.phoneNumber}
-                    onChange={(e) => update("phoneNumber", e.target.value)}
+                    onChange={(e) =>
+                      update("phoneNumber", toEnglishDigits(e.target.value))
+                    }
                     placeholder="شماره تماس بیمار"
                   />
                 </label>
@@ -1779,6 +2082,17 @@ function Wizard({
                     value={record.birthDate}
                     onChange={(v) => update("birthDate", v)}
                     placeholder="۱۳۷۰/۰۱/۰۱"
+                  />
+                </label>
+                <label>
+                  <span>
+                    Visit Date <b>*</b>
+                  </span>
+                  <BirthDatePicker
+                    value={record.visitDate}
+                    onChange={(v) => update("visitDate", v)}
+                    placeholder="تاریخ مراجعه"
+                    ariaLabel="انتخاب تاریخ مراجعه"
                   />
                 </label>
                 <label>
@@ -2057,6 +2371,10 @@ function Wizard({
                     <dt>Age</dt>
                     <dd>{calculateAge(record.birthDate) || "—"}</dd>
                   </div>
+                  <div>
+                    <dt>Visit Date</dt>
+                    <dd>{record.visitDate || "—"}</dd>
+                  </div>
                 </dl>
                 <h3>نتیجه اتوسکوپی</h3>
                 <div className="result-row">
@@ -2230,7 +2548,7 @@ function ReportPage({
         />
       </header>
       <span className="print-visit-date" dir="rtl">
-        تاریخ مراجعه: {formatTehranDateTime(currentTimestamp()).split("،")[0]}
+        تاریخ مراجعه: {record.visitDate || formatTehranDate(record.updatedAt)}
       </span>
       {patientFields.some(([, value]) => hasText(value)) && (
         <div
@@ -2737,6 +3055,10 @@ function RecordSummary({ record }: { record: RecordItem }) {
           <div>
             <dt>Age</dt>
             <dd>{valueOrDash(calculateAge(record.birthDate))}</dd>
+          </div>
+          <div>
+            <dt>Visit Date</dt>
+            <dd>{valueOrDash(record.visitDate)}</dd>
           </div>
         </dl>
       </section>

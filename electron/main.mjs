@@ -147,7 +147,7 @@ async function offerLegacyImport() {
   const selected = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "انتخاب پوشه data نسخه قبلی" });
   if (selected.canceled || !selected.filePaths[0] || !existsSync(path.join(selected.filePaths[0], "audiology.sqlite"))) { await dialog.showErrorBox("پوشه نامعتبر", "فایل audiology.sqlite در پوشه انتخاب‌شده پیدا نشد."); return; }
   mkdirSync(dataDirectory, { recursive: true });
-  for (const name of ["audiology.sqlite", "images", "pdfs"]) { const source = path.join(selected.filePaths[0], name); if (existsSync(source)) cpSync(source, path.join(dataDirectory, name), { recursive: true, errorOnExist: true }); }
+  for (const name of ["audiology.sqlite", "images", "pdfs", "factors"]) { const source = path.join(selected.filePaths[0], name); if (existsSync(source)) cpSync(source, path.join(dataDirectory, name), { recursive: true, errorOnExist: true }); }
 }
 
 function sendUpdate(state, extra = {}) { if (appWindow && !appWindow.isDestroyed()) appWindow.webContents.send("update:status", { state, ...extra }); }
@@ -265,6 +265,32 @@ ipcMain.handle("report:generate-open", async (_event, recordId) => {
   const error = await shell.openPath(report.outputPath);
   if (error) throw new Error(`Could not open generated PDF: ${error}`);
   return { url: report.url, fileName: report.fileName };
+});
+ipcMain.handle("invoice:save-pdf", async (event, recordId) => {
+  if (typeof recordId !== "string" || !/^A-[A-Za-z0-9_-]+$/.test(recordId)) throw new Error("Invalid record ID");
+  if (!appWindow || appWindow.isDestroyed() || event.sender !== appWindow.webContents) throw new Error("Invalid invoice window");
+  const database = new DatabaseSync(path.join(dataDirectory, "audiology.sqlite"));
+  try {
+    const row = database.prepare("SELECT national_id FROM records WHERE id = ?").get(recordId);
+    if (!row) throw new Error("Record not found");
+    const pdf = await event.sender.printToPDF({
+      printBackground: true,
+      pageSize: { width: 148000, height: 210000 },
+      preferCSSPageSize: false,
+    });
+    const safeId = String(row.national_id || recordId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const storedName = `${safeId}-${timestamp}.pdf`;
+    const directory = path.join(dataDirectory, "factors");
+    const output = path.join(directory, storedName);
+    const temporary = `${output}.tmp`;
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(temporary, pdf);
+    renameSync(temporary, output);
+    return { fileName: storedName };
+  } finally {
+    database.close();
+  }
 });
 
 app.on("before-quit", () => { if (serverProcess && !serverProcess.killed) serverProcess.kill("SIGTERM"); });

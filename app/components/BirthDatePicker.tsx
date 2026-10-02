@@ -104,6 +104,18 @@ function formatJalali(jy: number, jm: number, jd: number) {
   return `${toPersianDigits(String(jy).padStart(4, "0"))}/${toPersianDigits(String(jm).padStart(2, "0"))}/${toPersianDigits(String(jd).padStart(2, "0"))}`;
 }
 
+export function jalaliDateTimeToIso(dateValue: string, timeValue: string) {
+  const parsed = parseJalali(dateValue);
+  const time = toEnglishDigits(timeValue).match(/^(\d{1,2}):(\d{2})$/);
+  if (!parsed || !time) return null;
+  const hour = Number(time[1]);
+  const minute = Number(time[2]);
+  if (hour > 23 || minute > 59) return null;
+  const { gy, gm, gd } = d2g(j2d(parsed.jy, parsed.jm, parsed.jd));
+  const localDate = new Date(gy, gm - 1, gd, hour, minute, 0, 0);
+  return localDate.toISOString();
+}
+
 function weekdayOffset(jy: number, jm: number) {
   const { gy, gm, gd } = d2g(j2d(jy, jm, 1));
   const day = new Date(gy, gm - 1, gd).getDay();

@@ -11,6 +11,20 @@ const tehranDateTimeFormatter = new Intl.DateTimeFormat(
   },
 );
 
+const tehranLiveDateTimeFormatter = new Intl.DateTimeFormat(
+  "fa-IR-u-ca-persian",
+  {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  },
+);
+
 const toPersianDigits = (value: string) =>
   value.replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[Number(digit)]);
 
@@ -41,4 +55,24 @@ export function formatTehranDateTime(value: string) {
   return toPersianDigits(
     `${parts.year}/${parts.month}/${parts.day}، ${parts.hour}:${parts.minute}`,
   );
+}
+
+export function formatTehranDate(value = currentTimestamp()) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const parts = Object.fromEntries(
+    tehranDateTimeFormatter
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  return toPersianDigits(`${parts.year}/${parts.month}/${parts.day}`);
+}
+
+export function formatTehranLiveDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return tehranLiveDateTimeFormatter.format(date);
 }

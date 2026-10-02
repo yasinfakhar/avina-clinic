@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("desktop", {
   installUpdate: () => ipcRenderer.send("update:install"),
   generateReport: (recordId) => ipcRenderer.invoke("report:generate", recordId),
   generateAndOpenReport: (recordId) => ipcRenderer.invoke("report:generate-open", recordId),
+  saveInvoicePdf: (recordId) => ipcRenderer.invoke("invoice:save-pdf", recordId),
   importLegacyData: () => ipcRenderer.invoke("data:import"),
   onUpdateStatus: (callback) => {
     const listener = (_event, status) => callback(status);

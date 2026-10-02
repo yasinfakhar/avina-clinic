@@ -7,7 +7,7 @@ import test from "node:test";
 const directory = mkdtempSync(path.join(tmpdir(), "audiology-storage-"));
 process.env.AUDIOLOGY_DATA_DIR = directory;
 const { getDb, storagePaths } = await import("../db/index.ts");
-const { formatTehranDateTime, tehranDateFilePart } = await import("../app/tehran-time.ts");
+const { formatTehranDate, formatTehranDateTime, tehranDateFilePart } = await import("../app/tehran-time.ts");
 const { otoscopyImageName } = await import("../app/api/uploads/images/naming.ts");
 
 test("initializes the SQLite database and backup directories", () => {
@@ -16,8 +16,11 @@ test("initializes the SQLite database and backup directories", () => {
   assert.ok(tables.some((table) => table.name === "records"));
   assert.ok(tables.some((table) => table.name === "files"));
   assert.ok(tables.some((table) => table.name === "otoscopy_results"));
+  assert.ok(tables.some((table) => table.name === "patient_notes"));
+  assert.ok(tables.some((table) => table.name === "patient_reminders"));
   assert.equal(existsSync(storagePaths.images), true);
   assert.equal(existsSync(storagePaths.pdfs), true);
+  assert.equal(existsSync(storagePaths.factors), true);
   assert.equal(existsSync(storagePaths.database), true);
 });
 
@@ -31,6 +34,10 @@ test("formats update timestamps using the Persian calendar and Tehran time", () 
     formatTehranDateTime("2024-03-20T20:00:00.000Z"),
     "۱۴۰۳/۰۱/۰۱، ۲۳:۳۰",
   );
+});
+
+test("formats a stored visit date in the Persian calendar", () => {
+  assert.equal(formatTehranDate("2024-03-20T21:00:00.000Z"), "۱۴۰۳/۰۱/۰۲");
 });
 
 test("creates a Tehran Jalali date suitable for report filenames", () => {

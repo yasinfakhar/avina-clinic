@@ -80,6 +80,15 @@ test("automatic updates wait for the bundled server to stop before installation"
   assert.match(main, /await stopServer\(\);\s*autoUpdater\.quitAndInstall/);
 });
 
+test("invoice PDFs are saved through a validated desktop IPC channel", () => {
+  const main = readFileSync(new URL("../electron/main.mjs", import.meta.url), "utf8");
+  const preload = readFileSync(new URL("../electron/preload.cjs", import.meta.url), "utf8");
+  assert.match(main, /ipcMain\.handle\("invoice:save-pdf"/);
+  assert.match(main, /event\.sender !== appWindow\.webContents/);
+  assert.match(main, /path\.join\(dataDirectory, "factors"\)/);
+  assert.match(preload, /saveInvoicePdf: \(recordId\) => ipcRenderer\.invoke\("invoice:save-pdf", recordId\)/);
+});
+
 test("shows release notes once on the first launch of an installed version", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "audiology-release-notes-"));
   const pending = path.join(directory, "pending.json");
