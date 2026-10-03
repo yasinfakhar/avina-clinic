@@ -266,14 +266,46 @@ ipcMain.handle("report:generate-open", async (_event, recordId) => {
   if (error) throw new Error(`Could not open generated PDF: ${error}`);
   return { url: report.url, fileName: report.fileName };
 });
-ipcMain.handle("invoice:save-pdf", async (event, recordId) => {
+function isValidInvoice(invoice) {
+  return invoice && typeof invoice === "object" &&
+    (invoice.honorific === "سرکار خانم" || invoice.honorific === "جناب آقای") &&
+    typeof invoice.patientName === "string" && invoice.patientName.trim() && invoice.patientName.length <= 200 &&
+    typeof invoice.date === "string" && invoice.date.trim() && invoice.date.length <= 40 &&
+    Array.isArray(invoice.items) && invoice.items.length > 0 && invoice.items.length <= 50 &&
+    invoice.items.every((item) => item && typeof item.id === "string" && typeof item.name === "string" && item.name.trim() && item.name.length <= 200 && Number.isSafeInteger(item.price) && item.price >= 0);
+}
+
+ipcMain.handle("invoice:save-pdf", async (event, recordId, invoice) => {
   if (typeof recordId !== "string" || !/^A-[A-Za-z0-9_-]+$/.test(recordId)) throw new Error("Invalid record ID");
+  if (!isValidInvoice(invoice)) throw new Error("Invalid invoice");
   if (!appWindow || appWindow.isDestroyed() || event.sender !== appWindow.webContents) throw new Error("Invalid invoice window");
   const database = new DatabaseSync(path.join(dataDirectory, "audiology.sqlite"));
+  const hidden = new BrowserWindow({ show: false, webPreferences: secureWindowOptions() });
+  lockWindow(hidden);
   try {
     const row = database.prepare("SELECT national_id FROM records WHERE id = ?").get(recordId);
     if (!row) throw new Error("Record not found");
-    const pdf = await event.sender.printToPDF({
+    const invoiceUrl = new URL(localOrigin);
+    invoiceUrl.searchParams.set("printInvoice", JSON.stringify(invoice));
+    await hidden.loadURL(invoiceUrl.toString());
+    await hidden.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+      const started = Date.now(); const timer = setInterval(() => {
+        const ready = document.querySelector('.invoice-print-mode');
+        if (ready) {
+          const images = [...document.images];
+          Promise.all([
+            document.fonts.ready,
+            ...images.map((image) => image.complete
+              ? (image.naturalWidth ? Promise.resolve() : Promise.reject(new Error('Invoice image failed to load')))
+              : new Promise((imageResolve, imageReject) => {
+                  image.addEventListener('load', imageResolve, { once: true });
+                  image.addEventListener('error', () => imageReject(new Error('Invoice image failed to load')), { once: true });
+                }))
+          ]).then(() => { clearInterval(timer); requestAnimationFrame(() => requestAnimationFrame(resolve)); }, (error) => { clearInterval(timer); reject(error); });
+        } else if (Date.now() - started > 30000) { clearInterval(timer); reject(new Error('Invoice timed out')); }
+      }, 100);
+    })`);
+    const pdf = await hidden.webContents.printToPDF({
       printBackground: true,
       pageSize: { width: 148000, height: 210000 },
       preferCSSPageSize: false,
@@ -287,8 +319,11 @@ ipcMain.handle("invoice:save-pdf", async (event, recordId) => {
     mkdirSync(directory, { recursive: true });
     writeFileSync(temporary, pdf);
     renameSync(temporary, output);
+    const openError = await shell.openPath(output);
+    if (openError) throw new Error(`Could not open generated invoice PDF: ${openError}`);
     return { fileName: storedName };
   } finally {
+    hidden.destroy();
     database.close();
   }
 });

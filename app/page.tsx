@@ -9,7 +9,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { BirthDatePicker, jalaliDateTimeToIso } from "./components/BirthDatePicker";
+import { BirthDatePicker } from "./components/BirthDatePicker";
+import { jalaliDateTimeToIso } from "./jalali-date";
 import { AutocompleteInput } from "./components/AutocompleteInput";
 import { ImageAnnotator } from "./components/ImageAnnotator";
 import { dataUrlToBlob } from "./image-data";
@@ -387,9 +388,14 @@ function genderLabel(gender: Gender) {
 }
 
 function localTimeInput(value: string) {
-  const date = new Date(value);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(11, 16);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tehran",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(value));
+  const get = (type: "hour" | "minute") => parts.find((part) => part.type === type)?.value ?? "00";
+  return `${get("hour")}:${get("minute")}`;
 }
 
 const persianClockPart = (value: number) =>
@@ -734,6 +740,7 @@ export default function Home() {
   const [clock, setClock] = useState(0);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("printInvoice")) return;
     const clearPrintedInvoice = () => setInvoiceToPrint(null);
     window.addEventListener("afterprint", clearPrintedInvoice);
     return () => window.removeEventListener("afterprint", clearPrintedInvoice);
@@ -1147,6 +1154,12 @@ export default function Home() {
             notify("نام بیمار، تاریخ و مبلغ تست‌های فاکتور را کامل کنید");
             return;
           }
+          if (window.desktop) {
+            void window.desktop.saveInvoicePdf(invoiceRecord.id, invoiceDraft)
+              .then(() => notify("فاکتور ذخیره و با برنامه پیش‌فرض PDF باز شد"))
+              .catch(() => notify("ذخیره یا بازکردن PDF فاکتور ناموفق بود"));
+            return;
+          }
           setInvoiceToPrint(invoiceDraft);
           setTimeout(() => {
             void (async () => {
@@ -1163,25 +1176,16 @@ export default function Home() {
               } else if (letterhead?.naturalWidth) {
                 await letterhead.decode().catch(() => {});
               }
-              if (window.desktop) {
-                try {
-                  await window.desktop.saveInvoicePdf(invoiceRecord.id);
-                  notify("فاکتور در پوشه factors ذخیره شد");
-                } catch {
-                  notify("ذخیره PDF فاکتور ناموفق بود");
-                }
-              } else {
-                try {
-                  const response = await fetch("/api/invoices", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ recordId: invoiceRecord.id, invoice: invoiceDraft }),
-                  });
-                  if (!response.ok) throw new Error();
-                  notify("فاکتور در پوشه factors ذخیره شد");
-                } catch {
-                  notify("ذخیره PDF فاکتور ناموفق بود");
-                }
+              try {
+                const response = await fetch("/api/invoices", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ recordId: invoiceRecord.id, invoice: invoiceDraft }),
+                });
+                if (!response.ok) throw new Error();
+                notify("فاکتور در پوشه factors ذخیره شد");
+              } catch {
+                notify("ذخیره PDF فاکتور ناموفق بود");
               }
               window.print();
             })();

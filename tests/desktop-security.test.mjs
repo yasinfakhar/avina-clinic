@@ -85,8 +85,10 @@ test("invoice PDFs are saved through a validated desktop IPC channel", () => {
   const preload = readFileSync(new URL("../electron/preload.cjs", import.meta.url), "utf8");
   assert.match(main, /ipcMain\.handle\("invoice:save-pdf"/);
   assert.match(main, /event\.sender !== appWindow\.webContents/);
+  assert.match(main, /document\.querySelector\('\.invoice-print-mode'\)/);
   assert.match(main, /path\.join\(dataDirectory, "factors"\)/);
-  assert.match(preload, /saveInvoicePdf: \(recordId\) => ipcRenderer\.invoke\("invoice:save-pdf", recordId\)/);
+  assert.match(main, /await shell\.openPath\(output\)/);
+  assert.match(preload, /saveInvoicePdf: \(recordId, invoice\) => ipcRenderer\.invoke\("invoice:save-pdf", recordId, invoice\)/);
 });
 
 test("shows release notes once on the first launch of an installed version", () => {

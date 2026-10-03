@@ -8,6 +8,7 @@ const directory = mkdtempSync(path.join(tmpdir(), "audiology-storage-"));
 process.env.AUDIOLOGY_DATA_DIR = directory;
 const { getDb, storagePaths } = await import("../db/index.ts");
 const { formatTehranDate, formatTehranDateTime, tehranDateFilePart } = await import("../app/tehran-time.ts");
+const { formatJalali, jalaliDateTimeToIso, todayJalali } = await import("../app/jalali-date.ts");
 const { otoscopyImageName } = await import("../app/api/uploads/images/naming.ts");
 
 test("initializes the SQLite database and backup directories", () => {
@@ -42,6 +43,17 @@ test("formats a stored visit date in the Persian calendar", () => {
 
 test("creates a Tehran Jalali date suitable for report filenames", () => {
   assert.equal(tehranDateFilePart("2024-03-20T21:00:00.000Z"), "1403-01-02");
+});
+
+test("converts a Jalali reminder to the matching Tehran instant", () => {
+  const instant = jalaliDateTimeToIso("۱۴۰۵/۰۷/۱۱", "09:00");
+  assert.equal(instant, "2026-10-03T05:30:00.000Z");
+  assert.equal(formatTehranDate(instant), "۱۴۰۵/۰۷/۱۱");
+});
+
+test("uses today's Tehran date as the reminder default", () => {
+  const today = todayJalali();
+  assert.equal(formatJalali(today.jy, today.jm, today.jd), formatTehranDate());
 });
 
 test("uses the patient national ID in permanent otoscopy image filenames", () => {
