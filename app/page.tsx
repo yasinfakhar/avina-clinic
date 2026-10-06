@@ -14,6 +14,7 @@ import { BirthDatePicker } from "./components/BirthDatePicker";
 import { jalaliDateTimeToIso } from "./jalali-date";
 import { AutocompleteInput } from "./components/AutocompleteInput";
 import { ImageAnnotator } from "./components/ImageAnnotator";
+import { SmsSettings } from "./components/SmsSettings";
 import { dataUrlToBlob } from "./image-data";
 import { toEnglishDigits } from "./digits";
 import { sanitizeEnglishName, sanitizePersianName } from "./name-input";
@@ -260,13 +261,14 @@ const AUDIOMETRY_MIN = -10;
 const AUDIOMETRY_MAX = 120;
 const AUDIOMETRY_STEP = 5;
 
-async function persistRecord(record: RecordItem) {
-  const response = await fetch("/api/records", {
+async function persistRecord(record: RecordItem, finalize = false) {
+  const response = await fetch(finalize ? "/api/records?finalize=true" : "/api/records", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(record),
   });
   if (!response.ok) throw new Error("ذخیره پرونده ناموفق بود");
+  return response.json() as Promise<{ smsWarning?: string }>;
 }
 
 async function generateAndOpenPdf(recordId: string) {
@@ -1060,8 +1062,9 @@ export default function Home() {
       : [done, ...records];
     setRecords(next);
     setCurrent(done);
+    let smsWarning: string | undefined;
     try {
-      await persistRecord(done);
+      ({ smsWarning } = await persistRecord(done, true));
     } catch {
       notify("ذخیره پرونده ناموفق بود");
       setSaving(false);
@@ -1079,9 +1082,9 @@ export default function Home() {
         if (!response.ok) throw new Error();
       }
       setView("dashboard");
-      notify("تشخیص و فایل PDF با موفقیت ذخیره شدند");
+      notify(smsWarning || "تشخیص و فایل PDF با موفقیت ذخیره شدند");
     } catch {
-      notify("پرونده ثبت شد، اما ذخیره فایل PDF ناموفق بود");
+      notify(["پرونده ثبت شد، اما ذخیره فایل PDF ناموفق بود", smsWarning].filter(Boolean).join("؛ "));
     } finally {
       setSaving(false);
     }
@@ -1647,8 +1650,9 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
     onSettings(body); setTestFees(body.testFees); setMessage("هزینه تست‌ها ذخیره شد.");
   };
   return <section className="shell settings-page" dir="rtl">
-    <div className="hero-row"><div><p className="eyebrow">مدیریت برنامه</p><h1>تنظیمات</h1></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
+    <div className="hero-row settings-top"><div><p className="eyebrow">مدیریت برنامه</p><h1>تنظیمات</h1></div><button className="secondary" onClick={onBack}>بازگشت</button></div>
     <div className="settings-grid">
+      <SmsSettings />
       <article className="form-card"><h2>مشخصات و سربرگ چاپ</h2><p>نام زیر در بالای عنوان Audiologist نمایش داده می‌شود.</p><label>نام و نام خانوادگی شنوایی‌شناس<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>تم رنگی چاپ و PDF<div className="theme-color-field"><input type="color" value={/^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : "#5F7DC9"} onChange={(e) => setThemeColor(e.target.value.toUpperCase())} aria-label="انتخاب تم رنگی" /><input dir="ltr" value={themeColor} maxLength={7} placeholder="#5F7DC9" pattern="#[0-9A-Fa-f]{6}" onChange={(e) => setThemeColor(e.target.value)} aria-label="کد تم رنگی" /></div><small>کد رنگ را به شکل #RRGGBB وارد کنید. رنگ‌های پزشکی گوش راست و چپ تغییر نمی‌کنند.</small></label><button className="primary" onClick={saveName}>ذخیره مشخصات و تم رنگی</button><label>تصویر سربرگ چاپ (عرض ۲۴۸۰ و حداکثر ارتفاع ۴۰۰ پیکسل)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadHeader(e.target.files?.[0])} /></label><img className="settings-header-preview" src={settings.headerUrl} alt="پیش‌نمایش سربرگ چاپ" /></article>
       <article className="form-card"><h2>تغییر رمز عبور</h2>
         <label>رمز فعلی<div className="password"><input required autoComplete="current-password" type={visiblePasswords.current ? "text" : "password"} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /><button type="button" aria-label={visiblePasswords.current ? "پنهان کردن رمز فعلی" : "نمایش رمز فعلی"} onClick={() => setVisiblePasswords((state) => ({ ...state, current: !state.current }))}><Icon name="eye" /></button></div></label>

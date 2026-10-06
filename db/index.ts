@@ -50,6 +50,11 @@ export function getDb() {
     CREATE INDEX IF NOT EXISTS records_updated_at_idx ON records(updated_at DESC);
     CREATE INDEX IF NOT EXISTS records_national_id_idx ON records(national_id);
 
+    CREATE TABLE IF NOT EXISTS sms_welcome_attempts (
+      record_id TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS patient_notes (
       record_id TEXT PRIMARY KEY,
       note TEXT NOT NULL DEFAULT '',

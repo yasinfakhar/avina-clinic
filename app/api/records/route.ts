@@ -1,5 +1,7 @@
 import { getDb } from "@/db";
 import { requireSession } from "@/app/server/auth";
+import { smsSettings } from "@/app/server/sms-settings";
+import { sendSms, welcomeMessage } from "@/app/server/kavenegar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,6 +9,7 @@ export const dynamic = "force-dynamic";
 type StoredRecord = {
   id: string;
   fullName?: string;
+  phoneNumber?: string;
   nationalId?: string;
   doctorName?: string;
   status?: "draft" | "completed";
@@ -42,6 +45,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Images must be uploaded separately" }, { status: 400 });
   }
 
+  const previous = getDb().prepare("SELECT status FROM records WHERE id = ?").get(record.id) as { status: string } | undefined;
   getDb().prepare(`
     INSERT INTO records (id, full_name, national_id, doctor_name, status, data, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -62,5 +66,21 @@ export async function POST(request: Request) {
     updatedAt,
   );
 
-  return Response.json({ record: storedRecord });
+  let smsWarning: string | undefined;
+  // Explicit final registration only: imports, autosaves and edits never send.
+  if (new URL(request.url).searchParams.get("finalize") === "true" && status === "completed" && previous?.status !== "completed") {
+    const settings = smsSettings();
+    if (settings.welcomeEnabled) {
+      // Claim before contacting the provider; never retry an ambiguous timeout automatically.
+      const claim = getDb().prepare("INSERT OR IGNORE INTO sms_welcome_attempts (record_id, created_at) VALUES (?, ?)").run(record.id, Date.now());
+      if (claim.changes) {
+        try {
+          await sendSms(settings.apiKey, settings.sender, record.phoneNumber || "", welcomeMessage(settings.template, record.fullName || ""));
+        } catch (error) {
+          smsWarning = `پرونده ذخیره شد؛ پیامک خوش‌آمدگویی تأیید نشد: ${error instanceof Error ? error.message : "خطای ارسال"}`;
+        }
+      }
+    }
+  }
+  return Response.json({ record: storedRecord, smsWarning });
 }

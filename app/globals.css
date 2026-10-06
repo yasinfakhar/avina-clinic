@@ -349,3 +349,21 @@
   .print-audiometry-page .print-comments .print-note>div:not(.print-doctor),
   .print-tympanometry-page .print-comments .print-note>div:not(.print-doctor){font-size:13pt!important;line-height:1.7}
 }
+.sms-settings fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 14px; }
+.sms-settings .sms-toggle { display: flex; align-items: center; gap: 10px; }
+.sms-settings .sms-toggle input { width: 18px; height: 18px; flex-shrink: 0; }
+.sms-settings textarea { width: 100%; resize: vertical; border: 1px solid #dfe4eb; border-radius: 9px; padding: 12px; font: inherit; }
+.sms-settings button:disabled { opacity: .45; cursor: not-allowed; }
+.sms-preview { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f6fb; padding: 12px; border-radius: 10px; }
+
+.settings-page > .settings-top {
+  position: sticky;
+  top: 76px;
+  z-index: 4;
+  padding: 12px 0;
+  margin-top: -12px;
+  background: var(--bg);
+  box-shadow: 0 0 0 100vmax var(--bg);
+  clip-path: inset(0 -100vmax);
+  border-bottom: 1px solid var(--line);
+}
