@@ -9,6 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { AudiometrySuggestion } from "./components/AudiometrySuggestion";
 import { BirthDatePicker } from "./components/BirthDatePicker";
 import { jalaliDateTimeToIso } from "./jalali-date";
 import { AutocompleteInput } from "./components/AutocompleteInput";
@@ -1149,6 +1150,20 @@ export default function Home() {
         availableTests={settings.testFees}
         onChange={setInvoiceDraft}
         onClose={() => { setInvoiceRecord(null); setInvoiceDraft(null); }}
+        onSave={() => {
+          if (!invoiceDraft.patientName.trim() || !invoiceDraft.date.trim() || !invoiceDraft.items.length || invoiceDraft.items.some((item) => item.price == null)) {
+            notify("نام بیمار، تاریخ و مبلغ تست‌های فاکتور را کامل کنید");
+            return;
+          }
+          if (window.desktop) {
+            void window.desktop.saveInvoicePdfAs(invoiceRecord.id, invoiceDraft)
+              .then((result) => { if (!result.canceled) notify("PDF فاکتور در محل انتخاب‌شده ذخیره شد"); })
+              .catch(() => notify("ذخیره PDF فاکتور ناموفق بود"));
+            return;
+          }
+          setInvoiceToPrint(invoiceDraft);
+          setTimeout(() => { void document.fonts.ready.then(() => window.print()); }, 0);
+        }}
         onPrint={() => {
           if (!invoiceDraft.patientName.trim() || !invoiceDraft.date.trim() || !invoiceDraft.items.length || invoiceDraft.items.some((item) => item.price == null)) {
             notify("نام بیمار، تاریخ و مبلغ تست‌های فاکتور را کامل کنید");
@@ -1311,8 +1326,8 @@ export default function Home() {
         <section className="shell">
           <div className="hero-row">
             <div>
-              <p className="eyebrow">مدیریت مراجعین</p>
-              <h1>پرونده‌های شنوایی‌سنجی</h1>
+              {/* <p className="eyebrow">مدیریت مراجعین</p> */}
+              <h1>پرونده‌ بیماران</h1>
               <p>
                 اطلاعات بیماران، تشخیص‌ها و گزارش‌های ثبت‌شده را مدیریت کنید.
               </p>
@@ -1659,7 +1674,7 @@ function Settings({ settings, onSettings, onBack }: { settings: AppSettings; onS
 
 function formatMoney(value: number) { return value.toLocaleString("fa-IR"); }
 
-function InvoiceModal({ draft, availableTests, onChange, onClose, onPrint }: { record: RecordItem; draft: InvoiceDraft; availableTests: TestFee[]; onChange: (draft: InvoiceDraft) => void; onClose: () => void; onPrint: () => void }) {
+function InvoiceModal({ draft, availableTests, onChange, onClose, onPrint, onSave }: { record: RecordItem; draft: InvoiceDraft; availableTests: TestFee[]; onChange: (draft: InvoiceDraft) => void; onClose: () => void; onPrint: () => void; onSave: () => void }) {
   const total = draft.items.reduce((sum, item) => sum + (item.price || 0), 0);
   const toggleTest = (test: TestFee) => onChange({ ...draft, items: draft.items.some((item) => item.id === test.id) ? draft.items.filter((item) => item.id !== test.id) : [...draft.items, test] });
   return <div className="invoice-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -1673,7 +1688,7 @@ function InvoiceModal({ draft, availableTests, onChange, onClose, onPrint }: { r
       <fieldset className="invoice-tests"><legend>تست‌های انجام‌شده</legend><div className="invoice-test-options">{availableTests.map((test) => <label key={test.id}><input type="checkbox" checked={draft.items.some((item) => item.id === test.id)} onChange={() => toggleTest(test)} /><span>{test.name}</span><small>{test.price == null ? "بدون هزینه ثبت‌شده" : `${formatMoney(test.price)} ریال`}</small></label>)}</div></fieldset>
       {draft.items.length > 0 && <div className="invoice-items-editor">{draft.items.map((item) => <label key={item.id}><span>{item.name}</span><div><input type="number" min="0" step="1" value={item.price ?? ""} aria-label={`هزینه ${item.name}`} onChange={(event) => onChange({ ...draft, items: draft.items.map((selected) => selected.id === item.id ? { ...selected, price: event.target.value === "" ? null : Number(event.target.value) } : selected) })} /><small>ریال</small></div></label>)}</div>}
       <div className="invoice-total"><span>جمع کل</span><strong>{formatMoney(total)} ریال</strong><small>معادل {formatMoney(Math.round(total / 10))} تومان</small></div>
-      <div className="invoice-modal-actions"><button className="secondary" type="button" onClick={onClose}>انصراف</button><button className="primary" type="button" onClick={onPrint}><Icon name="print" /> چاپ فاکتور A5</button></div>
+      <div className="invoice-modal-actions"><button className="secondary" type="button" onClick={onClose}>انصراف</button><button className="secondary" type="button" onClick={onSave}>ذخیره PDF</button><button className="primary" type="button" onClick={onPrint}><Icon name="print" /> چاپ فاکتور A5</button></div>
     </section>
   </div>;
 }
@@ -1701,6 +1716,9 @@ function Login({ onLogin }: { onLogin: (onboardingRequired: boolean) => void }) 
   const [recovering, setRecovering] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryPasswordConfirmation, setRecoveryPasswordConfirmation] = useState("");
+  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
+  const [showRecoveryConfirmation, setShowRecoveryConfirmation] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1717,6 +1735,9 @@ function Login({ onLogin }: { onLogin: (onboardingRequired: boolean) => void }) 
     }
   };
   const recover = async () => {
+    if (!recoveryCode.trim()) return setError("کد بازیابی را وارد کنید.");
+    if (recoveryPassword.length < 10 || !/[A-Za-z]/.test(recoveryPassword) || !/\d/.test(recoveryPassword)) return setError("رمز جدید باید حداقل ۱۰ نویسه و شامل حرف انگلیسی و عدد باشد.");
+    if (recoveryPassword !== recoveryPasswordConfirmation) return setError("رمز جدید و تکرار آن یکسان نیستند.");
     setSubmitting(true); setError("");
     try {
       const response = await fetch("/api/auth/recovery", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: recoveryCode, newPassword: recoveryPassword }) });
@@ -1731,7 +1752,8 @@ function Login({ onLogin }: { onLogin: (onboardingRequired: boolean) => void }) 
       <section className="login-card">
         <div className="login-brand-name">شنوایی شناسی</div>
         <p>مدیریت یکپارچه پرونده‌های شنوایی‌سنجی</p>
-        <form onSubmit={submit}>
+        <form onSubmit={recovering ? (event) => { event.preventDefault(); void recover(); } : submit}>
+          {!recovering ? <>
           <label>
             نام کاربری
             <input
@@ -1777,10 +1799,19 @@ function Login({ onLogin }: { onLogin: (onboardingRequired: boolean) => void }) 
             <label>
               <input type="checkbox" /> مرا به خاطر بسپار
             </label>
-            <button type="button" className="link-button" onClick={() => setRecovering(!recovering)}>فراموشی رمز عبور</button>
+            <button type="button" className="link-button" onClick={() => { setRecovering(true); setError(""); }}>فراموشی رمز عبور</button>
           </div>
-          {recovering && <div className="recovery-box"><label>کد بازیابی<input value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} /></label><label>رمز جدید<input type="password" minLength={10} value={recoveryPassword} onChange={(e) => setRecoveryPassword(e.target.value)} /></label><button type="button" className="secondary wide" disabled={submitting} onClick={() => void recover()}>ثبت رمز جدید</button></div>}
           <button className="primary wide" disabled={submitting}>{submitting ? "در حال ورود…" : "ورود به سامانه"}</button>
+          </> : <>
+            <div className="recovery-box">
+              <div className="recovery-heading"><strong>بازیابی رمز عبور</strong><button type="button" className="link-button recovery-back" onClick={() => { setRecovering(false); setError(""); }}>بازگشت به ورود</button></div>
+              <label>کد بازیابی<input autoComplete="one-time-code" value={recoveryCode} onChange={(e) => { setRecoveryCode(e.target.value); setError(""); }} /></label>
+              <label>رمز جدید<div className="password"><input type={showRecoveryPassword ? "text" : "password"} autoComplete="new-password" minLength={10} value={recoveryPassword} onChange={(e) => { setRecoveryPassword(e.target.value); setError(""); }} /><button type="button" aria-label={showRecoveryPassword ? "پنهان کردن رمز جدید" : "نمایش رمز جدید"} onClick={() => setShowRecoveryPassword(!showRecoveryPassword)}><Icon name="eye" /></button></div></label>
+              <label>تکرار رمز جدید<div className="password"><input type={showRecoveryConfirmation ? "text" : "password"} autoComplete="new-password" minLength={10} value={recoveryPasswordConfirmation} onChange={(e) => { setRecoveryPasswordConfirmation(e.target.value); setError(""); }} /><button type="button" aria-label={showRecoveryConfirmation ? "پنهان کردن تکرار رمز جدید" : "نمایش تکرار رمز جدید"} onClick={() => setShowRecoveryConfirmation(!showRecoveryConfirmation)}><Icon name="eye" /></button></div></label>
+              {error && <p className="login-error" role="alert">{error}</p>}
+              <button className="primary wide" disabled={submitting}>{submitting ? "در حال ثبت…" : "ثبت رمز جدید"}</button>
+            </div>
+          </>}
         </form>
         <small>نسخه ۱.۰ · سامانه تخصصی کلینیک شنوایی</small>
       </section>
@@ -2314,6 +2345,19 @@ function Wizard({
                 />
                 <div className="audiometry-comment">
                   <CombinedDoctorComment
+                    action={
+                      <AudiometrySuggestion
+                        right={record.right.audiometry}
+                        left={record.left.audiometry}
+                        onApply={(text) => setRecord({
+                          ...record,
+                          audiometricTests: {
+                            ...audiometricTests,
+                            comments: { right: text, left: text },
+                          },
+                        })}
+                      />
+                    }
                     resultTitle="Audiometry Result"
                     dearDoctor={audiometricTests.dearDoctor}
                     comment={audiometricTests.comments.right}
@@ -2539,7 +2583,7 @@ function ReportPage({
     ["National ID", record.nationalId],
     ["Gender", genderLabel(record.gender)],
     ["Age", calculateAge(record.birthDate)],
-    ["Referred Doctor", record.doctorName],
+    ["Referred Doctor", record.doctorName.trim() ? `Dr. ${record.doctorName.trim()}` : ""],
   ];
 
   return (
@@ -3933,6 +3977,7 @@ function TympanometryCard({
       </div>
       <fieldset className="doctor-comment">
         <legend>Comment</legend>
+
         <label>
           <span>Dear Dr.</span>
           <input
@@ -4398,16 +4443,19 @@ function CombinedDoctorComment({
   onDearDoctorChange,
   onCommentChange,
   resultTitle = "Tympanometry Result",
+  action,
 }: {
   dearDoctor: string;
   comment: string;
   onDearDoctorChange: (text: string) => void;
   onCommentChange: (text: string) => void;
   resultTitle?: string;
+  action?: React.ReactNode;
 }) {
   return (
     <fieldset className="combined-comment">
       <legend>Comment</legend>
+      {action}
       <label className="dear-doctor">
         <span>Dear Dr.</span>
         <input

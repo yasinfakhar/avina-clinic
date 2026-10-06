@@ -275,16 +275,27 @@ function isValidInvoice(invoice) {
     invoice.items.every((item) => item && typeof item.id === "string" && typeof item.name === "string" && item.name.trim() && item.name.length <= 200 && Number.isSafeInteger(item.price) && item.price >= 0);
 }
 
-ipcMain.handle("invoice:save-pdf", async (event, recordId, invoice) => {
+ipcMain.handle("invoice:save-pdf", async (event, recordId, invoice, action = "open") => {
   if (typeof recordId !== "string" || !/^A-[A-Za-z0-9_-]+$/.test(recordId)) throw new Error("Invalid record ID");
   if (!isValidInvoice(invoice)) throw new Error("Invalid invoice");
+  if (action !== "open" && action !== "save-as") throw new Error("Invalid invoice action");
   if (!appWindow || appWindow.isDestroyed() || event.sender !== appWindow.webContents) throw new Error("Invalid invoice window");
   const database = new DatabaseSync(path.join(dataDirectory, "audiology.sqlite"));
-  const hidden = new BrowserWindow({ show: false, webPreferences: secureWindowOptions() });
-  lockWindow(hidden);
+  let hidden;
   try {
     const row = database.prepare("SELECT national_id FROM records WHERE id = ?").get(recordId);
     if (!row) throw new Error("Record not found");
+    const safeId = String(row.national_id || recordId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const storedName = `${safeId}-${timestamp}.pdf`;
+    const selected = action === "save-as" ? await dialog.showSaveDialog(appWindow, {
+      title: "ذخیره PDF فاکتور",
+      defaultPath: path.join(app.getPath("documents"), storedName),
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    }) : null;
+    if (selected?.canceled || (action === "save-as" && !selected?.filePath)) return { canceled: true };
+    hidden = new BrowserWindow({ show: false, webPreferences: secureWindowOptions() });
+    lockWindow(hidden);
     const invoiceUrl = new URL(localOrigin);
     invoiceUrl.searchParams.set("printInvoice", JSON.stringify(invoice));
     await hidden.loadURL(invoiceUrl.toString());
@@ -307,23 +318,27 @@ ipcMain.handle("invoice:save-pdf", async (event, recordId, invoice) => {
     })`);
     const pdf = await hidden.webContents.printToPDF({
       printBackground: true,
-      pageSize: { width: 148000, height: 210000 },
-      preferCSSPageSize: false,
+      pageSize: "A5",
+      preferCSSPageSize: true,
     });
-    const safeId = String(row.national_id || recordId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const storedName = `${safeId}-${timestamp}.pdf`;
     const directory = path.join(dataDirectory, "factors");
-    const output = path.join(directory, storedName);
+    const output = selected?.filePath || path.join(directory, storedName);
     const temporary = `${output}.tmp`;
-    mkdirSync(directory, { recursive: true });
-    writeFileSync(temporary, pdf);
-    renameSync(temporary, output);
-    const openError = await shell.openPath(output);
-    if (openError) throw new Error(`Could not open generated invoice PDF: ${openError}`);
-    return { fileName: storedName };
+    if (action === "open") mkdirSync(directory, { recursive: true });
+    try {
+      writeFileSync(temporary, pdf);
+      renameSync(temporary, output);
+    } catch (error) {
+      rmSync(temporary, { force: true });
+      throw error;
+    }
+    if (action === "open") {
+      const openError = await shell.openPath(output);
+      if (openError) throw new Error(`Could not open generated invoice PDF: ${openError}`);
+    }
+    return { fileName: path.basename(output), canceled: false };
   } finally {
-    hidden.destroy();
+    hidden?.destroy();
     database.close();
   }
 });

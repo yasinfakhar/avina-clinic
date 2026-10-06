@@ -86,9 +86,13 @@ test("invoice PDFs are saved through a validated desktop IPC channel", () => {
   assert.match(main, /ipcMain\.handle\("invoice:save-pdf"/);
   assert.match(main, /event\.sender !== appWindow\.webContents/);
   assert.match(main, /document\.querySelector\('\.invoice-print-mode'\)/);
+  assert.match(main, /pageSize: "A5",\s*preferCSSPageSize: true/);
+  assert.match(main, /dialog\.showSaveDialog\(appWindow/);
+  assert.match(main, /action !== "open" && action !== "save-as"/);
   assert.match(main, /path\.join\(dataDirectory, "factors"\)/);
   assert.match(main, /await shell\.openPath\(output\)/);
   assert.match(preload, /saveInvoicePdf: \(recordId, invoice\) => ipcRenderer\.invoke\("invoice:save-pdf", recordId, invoice\)/);
+  assert.match(preload, /saveInvoicePdfAs: \(recordId, invoice\) => ipcRenderer\.invoke\("invoice:save-pdf", recordId, invoice, "save-as"\)/);
 });
 
 test("shows release notes once on the first launch of an installed version", () => {

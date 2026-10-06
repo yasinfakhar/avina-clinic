@@ -17,7 +17,11 @@ if (manifest.version !== requestedVersion) {
   throw new Error(`package.json version is ${manifest.version}; set it to ${requestedVersion} before building`);
 }
 
-execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build:desktop"], { stdio: "inherit", env: process.env });
+execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build:desktop"], {
+  stdio: "inherit",
+  env: process.env,
+  shell: process.platform === "win32",
+});
 
 const source = path.resolve("release");
 const destination = path.resolve("windows");
