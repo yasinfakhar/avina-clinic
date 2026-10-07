@@ -6,7 +6,7 @@ import test from "node:test";
 
 const directory = mkdtempSync(path.join(tmpdir(), "audiology-storage-"));
 process.env.AUDIOLOGY_DATA_DIR = directory;
-const { getDb, storagePaths } = await import("../db/index.ts");
+const { closeDb, getDb, storagePaths } = await import("../db/index.ts");
 const { formatTehranDate, formatTehranDateTime, tehranDateFilePart } = await import("../app/tehran-time.ts");
 const { formatJalali, jalaliDateTimeToIso, todayJalali } = await import("../app/jalali-date.ts");
 const { otoscopyImageName } = await import("../app/api/uploads/images/naming.ts");
@@ -61,6 +61,14 @@ test("uses the patient national ID in permanent otoscopy image filenames", () =>
     otoscopyImageName(" ۰۰۱۲۳۴۵۶۷۸ ", "right", "original", ".jpg", 123456),
     "0012345678-right-original-123456.jpg",
   );
+});
+
+test("closes and reopens the shared database for desktop maintenance", () => {
+  const previous = getDb();
+  closeDb();
+  const reopened = getDb();
+  assert.notEqual(reopened, previous);
+  assert.ok(reopened.prepare("SELECT 1 AS ready").get().ready);
 });
 
 test.after(() => {

@@ -15,18 +15,30 @@ export function isWithin(root, candidate) {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
+export function readablePowerShellError(value) {
+  const source = String(value || '');
+  const xmlMessages = [...source.matchAll(/<S S="Error">([\s\S]*?)<\/S>/g)].map((match) => match[1]);
+  const message = (xmlMessages.length ? xmlMessages.join(' ') : source)
+    .replace(/_x([0-9a-fA-F]{4})_/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ').trim();
+  const locked = message.match(/The process cannot access the file ['"]([^'"]+)['"] because it is being used by another process/i);
+  if (locked) return `فایل دیتابیس هنوز توسط برنامه در حال استفاده است: ${locked[1]}`;
+  return message || 'PowerShell بدون ارائهٔ جزئیات متوقف شد.';
+}
+
 export function archive(action, source, destination) {
   if (process.platform !== 'win32') throw new Error('این قابلیت فعلاً در نسخهٔ ویندوز فعال است.');
   const script = readFileSync(new URL('./backup-archive.ps1', import.meta.url), 'utf8');
   return new Promise((resolve, reject) => {
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
       windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'],
       env: { ...process.env, AVINA_ARCHIVE_ACTION: action, AVINA_ARCHIVE_SOURCE: source, AVINA_ARCHIVE_DESTINATION: destination },
     });
     let error = '';
     child.stderr.on('data', (chunk) => { error = (error + chunk).slice(-4000); });
     child.once('error', reject);
-    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`عملیات ZIP ناموفق بود. ${error}`)));
+    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`عملیات ZIP ناموفق بود. ${readablePowerShellError(error)}`)));
   });
 }
 

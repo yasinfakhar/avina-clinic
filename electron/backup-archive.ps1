@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $source = $env:AVINA_ARCHIVE_SOURCE
 $destination = $env:AVINA_ARCHIVE_DESTINATION

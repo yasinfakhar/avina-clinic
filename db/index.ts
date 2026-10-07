@@ -140,3 +140,11 @@ export function getDb() {
   databaseGlobal.audiologyDatabase = database;
   return database;
 }
+
+export function closeDb() {
+  const databaseGlobal = globalThis as DatabaseGlobal;
+  const database = databaseGlobal.audiologyDatabase;
+  if (!database) return;
+  database.close();
+  delete databaseGlobal.audiologyDatabase;
+}

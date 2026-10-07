@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { archive, backupName, createBackupStore, isWithin, validateData } from '../electron/backup.mjs';
+import { archive, backupName, createBackupStore, isWithin, readablePowerShellError, validateData } from '../electron/backup.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(path.join(tmpdir(), 'avina-backup-test-'));
@@ -36,6 +36,11 @@ test('backup filename uses Tehran date and time, and containment respects siblin
   assert.equal(backupName(new Date('2026-10-07T21:00:00Z')), 'avina_backup_2026-10-08_00-30-00.zip');
   assert.equal(isWithin('C:/app/data', 'C:/app/data/backup.zip'), true);
   assert.equal(isWithin('C:/app/data', 'C:/app/data-old/backup.zip'), false);
+});
+
+test('PowerShell CLIXML errors are converted to a readable Persian message', () => {
+  const xml = '#< CLIXML<Objs><S S="Error">The process cannot access the file &quot;C:\\data\\audiology.sqlite&quot; because it is being used by another process._x000D__x000A_</S></Objs>';
+  assert.equal(readablePowerShellError(xml), 'فایل دیتابیس هنوز توسط برنامه در حال استفاده است: C:\\data\\audiology.sqlite');
 });
 
 test('invalid databases and missing attachments are rejected', (t) => {
