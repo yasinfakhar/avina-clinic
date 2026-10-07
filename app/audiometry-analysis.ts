@@ -1,92 +1,141 @@
 import { audiometryConfig } from './audiometry-config.mjs';
+
 export type AudiometryConfig = typeof audiometryConfig;
-export type AudiometryInput = { ac: Record<string, { value: string; modifier: string }>; bc: Record<string, { value: string; modifier: string }> };
-export type LossType = 'NORMAL' | 'SNHL' | 'CHL' | 'MIXED' | 'UNDETERMINED';
+export type AudiogramThreshold = number | string | null | { value: string; modifier: string };
+export type AudiometryInput = { ac: Record<string, AudiogramThreshold>; bc?: Record<string, AudiogramThreshold> };
+export type HearingDegree = 'NORMAL' | 'SLIGHT' | 'MILD' | 'MODERATE' | 'MODERATELY_SEVERE' | 'SEVERE' | 'PROFOUND' | 'UNKNOWN';
+export type LossType = 'NORMAL' | 'SNHL' | 'CHL' | 'MIXED' | 'UNKNOWN';
 export type Region = 'LOW' | 'MID' | 'HIGH';
+export type FrequencyRegion = 'BROAD' | 'LOW_FREQUENCY' | 'MID_FREQUENCY' | 'HIGH_FREQUENCY' | 'MID_TO_HIGH' | 'LOW_TO_MID' | 'ISOLATED_FREQUENCY' | 'UNKNOWN';
 export type Warning = 'MISSING_BC' | 'INSUFFICIENT_DATA' | 'NO_RESPONSE_PRESENT' | 'ISOLATED_ABG' | 'BORDERLINE_ABG' | 'REVIEW_REQUIRED' | 'INVALID_THRESHOLD' | 'CONFLICTING_THRESHOLDS' | 'PARTIAL_AC' | 'UNMASKED_ABG' | 'ISOLATED_THRESHOLD';
-export type FrequencyPoint = { frequency: number; ac: number | null; bc: number | null; acModifier: string; bcModifier: string; status: 'NORMAL' | 'ABNORMAL' | 'UNKNOWN'; type: LossType; abg: number | null };
-export type FrequencyPattern = { kind: 'SINGLE_FREQUENCY' | 'TWO_ADJACENT_FREQUENCIES' | 'TWO_NON_ADJACENT_FREQUENCIES' | 'CONTIGUOUS_RANGE' | 'REGIONAL_PATTERN' | 'MULTIPLE_DISCRETE_FREQUENCIES' | 'BROAD_BAND'; frequencies: number[]; regions: Region[] };
-export type Finding = { type: LossType; degreeMin: string; degreeMax: string; pattern: FrequencyPattern };
+export type FrequencyPoint = { frequency: number; ac: number | null; bc: number | null; acModifier: string; bcModifier: string; abg: number | null };
 export type EarProfile = {
-  ear: 'right' | 'left'; type: LossType; points: FrequencyPoint[]; findings: Finding[];
-  exactAffectedFrequencies: number[]; frequencyPattern: FrequencyPattern;
-  abg: { frequencies: number[]; isolated: boolean; conductiveComponentConfirmed: boolean; pattern: FrequencyPattern };
-  regionalAnalysis: { region: Region; types: LossType[]; abg: boolean; degreeMin: string; degreeMax: string }[];
-  configuration: 'FLAT' | 'SLOPING' | 'RISING' | 'NOTCH' | 'COOKIE_BITE' | 'REVERSE_COOKIE_BITE' | 'IRREGULAR' | 'NONE';
-  notch: number[]; confidence: 'HIGH' | 'MEDIUM' | 'LOW'; warnings: Warning[];
+  ear: 'right' | 'left'; status: 'NORMAL' | 'HEARING_LOSS' | 'UNKNOWN'; type: LossType;
+  points: FrequencyPoint[]; degreeFrom: HearingDegree; degreeTo: HearingDegree;
+  frequencyRegion: FrequencyRegion; isolatedFrequencies: number[]; exactAffectedFrequencies: number[];
+  airBoneGapFrequencies: number[]; residualAirBoneGap: boolean;
+  configuration: 'FLAT' | 'SLOPING' | 'STEEPLY_SLOPING' | 'RISING' | 'NOTCHED' | 'COOKIE_BITE' | 'REVERSE_COOKIE_BITE' | 'IRREGULAR' | 'NONE' | 'UNKNOWN';
+  notchFrequency: number | null; pta3: number | null; pta4: number | null;
+  regionalAverages: Record<Region, number | null>;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW'; warnings: Warning[];
 };
-export type AudiometryReportProfile = { rightEar: EarProfile; leftEar: EarProfile; bilateralEligible: boolean; interauralDifferences: { frequency: number; differenceDb: number }[]; warnings: Warning[] };
+export type SymmetryClassification = 'SYMMETRICAL' | 'ASYMMETRICAL' | 'RIGHT_WORSE' | 'LEFT_WORSE' | 'UNKNOWN';
+export type AudiometryReportProfile = { rightEar: EarProfile; leftEar: EarProfile; symmetry: SymmetryClassification; bilateralEligible: boolean; interauralDifferences: { frequency: number; differenceDb: number }[]; warnings: Warning[] };
 const region = (f: number): Region => f <= 500 ? 'LOW' : f < 3000 ? 'MID' : 'HIGH';
-export function frequencyPattern(fs: number[], tested: number[]): FrequencyPattern {
-  const regions = [...new Set(fs.map(region))];
-  const contiguous = fs.every((f, i) => i === 0 || tested.indexOf(f) === tested.indexOf(fs[i - 1]) + 1);
-  const kind = fs.length === 1 ? 'SINGLE_FREQUENCY' : fs.length === 2 ? (contiguous ? 'TWO_ADJACENT_FREQUENCIES' : 'TWO_NON_ADJACENT_FREQUENCIES') : fs.length === tested.length && fs.length >= 3 ? 'BROAD_BAND' : contiguous ? (fs.length >= 3 ? 'REGIONAL_PATTERN' : 'CONTIGUOUS_RANGE') : 'MULTIPLE_DISCRETE_FREQUENCIES';
-  return { kind, frequencies: fs, regions };
+const mean = (values: number[]) => values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+
+export function classifyDegree(value: number | null, config = audiometryConfig): HearingDegree {
+  if (value === null || !Number.isFinite(value)) return 'UNKNOWN';
+  if (value <= config.normalThresholdDb) return 'NORMAL';
+  return (config.degrees.find(d => value <= d.maximum)?.name ?? 'UNKNOWN') as HearingDegree;
 }
+
 export function analyzeEar(ear: 'right' | 'left', input?: AudiometryInput, config: AudiometryConfig = audiometryConfig): EarProfile {
   const warnings = new Set<Warning>();
-  const parse = (cell?: { value: string; modifier: string }) => {
-    if (cell?.modifier === 'NR' || cell?.value.trim().toUpperCase() === 'NR') { warnings.add('NO_RESPONSE_PRESENT'); return null; }
-    if (!cell?.value.trim()) return null;
-    const n = Number(cell.value);
-    if (!Number.isFinite(n) || n < config.minimumDb || n > config.maximumDb || n % config.stepDb !== 0) { warnings.add('INVALID_THRESHOLD'); return null; }
-    return n;
+  const parse = (cell: AudiogramThreshold | undefined): [number | null, string] => {
+    const value = typeof cell === 'object' && cell !== null ? cell.value : cell;
+    const modifier = typeof cell === 'object' && cell !== null ? cell.modifier : '';
+    if (modifier === 'NR' || String(value).trim().toUpperCase() === 'NR') {
+      warnings.add('NO_RESPONSE_PRESENT'); return [null, 'NR'];
+    }
+    if (value == null || String(value).trim() === '') return [null, modifier];
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < config.minimumDb || n > config.maximumDb) {
+      warnings.add('INVALID_THRESHOLD'); return [null, modifier];
+    }
+    return [n, modifier];
   };
-  const points: FrequencyPoint[] = config.frequencies.map(frequency => {
-    const ac = parse(input?.ac[frequency]); const bc = parse(input?.bc[frequency]);
-    if (ac !== null && bc !== null && bc > ac) warnings.add('CONFLICTING_THRESHOLDS');
+  const points = config.frequencies.map(frequency => {
+    const [ac, acModifier] = parse(input?.ac[frequency]);
+    const [bc, bcModifier] = config.boneFrequencies.includes(frequency) ? parse(input?.bc?.[frequency]) : [null, ''] as const;
     const abg = ac !== null && bc !== null ? ac - bc : null;
+    if (abg !== null && abg < 0) warnings.add('CONFLICTING_THRESHOLDS');
     if (abg !== null && abg >= config.borderlineAbgDb && abg < config.significantAbgDb) warnings.add('BORDERLINE_ABG');
-    return { frequency, ac, bc, acModifier: input?.ac[frequency]?.modifier ?? '', bcModifier: input?.bc[frequency]?.modifier ?? '', abg, status: ac === null ? 'UNKNOWN' : ac <= config.normalThresholdDb ? 'NORMAL' : 'ABNORMAL', type: 'UNDETERMINED' };
+    return { frequency, ac, bc, acModifier, bcModifier, abg };
   });
   const valid = points.filter(p => p.ac !== null);
-  const affected = valid.filter(p => p.status === 'ABNORMAL');
-  if (affected.length === 1) warnings.add('ISOLATED_THRESHOLD');
+  const affected = valid.filter(p => p.ac! > config.normalThresholdDb);
+  const fs = affected.map(p => p.frequency);
   const gaps = points.filter(p => p.abg !== null && p.abg >= config.significantAbgDb);
-  if (gaps.length === 1) warnings.add('ISOLATED_ABG');
+  const pairs = valid.filter(p => p.bc !== null && p.bc <= p.ac!);
+  const abnormalPairs = pairs.filter(p => p.ac! > config.normalThresholdDb);
+  const missingRequiredBone = affected.some(p => config.boneFrequencies.includes(p.frequency) && p.bc === null);
+  const sensorineuralPairs = abnormalPairs.filter(p => p.bc! > config.normalThresholdDb && p.abg! < config.significantAbgDb);
+  // Low-frequency gaps must not redefine separately supported mid/high-frequency SNHL.
+  const meaningfulGaps = abnormalPairs.filter(p => p.abg! >= config.significantAbgDb);
+  const residualAirBoneGap = gaps.length > 0 && gaps.every(p => region(p.frequency) === 'LOW') && sensorineuralPairs.some(p => region(p.frequency) !== 'LOW') && meaningfulGaps.length / affected.length <= config.maximumResidualGapProportion;
+  let type: LossType = 'UNKNOWN';
+  if (affected.length && !warnings.has('CONFLICTING_THRESHOLDS') && !missingRequiredBone && pairs.length >= config.minimumBonePoints && abnormalPairs.length) {
+    if (meaningfulGaps.length >= config.minimumConductivePoints && !residualAirBoneGap) {
+      type = abnormalPairs.some(p => p.bc! > config.normalThresholdDb) ? 'MIXED' : 'CHL';
+    } else if (sensorineuralPairs.length && (meaningfulGaps.length === 0 || residualAirBoneGap)) type = 'SNHL';
+  }
+  if (affected.length && (missingRequiredBone || pairs.length < config.minimumBonePoints || !abnormalPairs.length)) warnings.add('MISSING_BC');
+  if (gaps.length && meaningfulGaps.length < config.minimumConductivePoints) warnings.add('ISOLATED_ABG');
   if (gaps.some(p => p.bcModifier !== 'M' && p.bcModifier !== 'MD')) warnings.add('UNMASKED_ABG');
-  // Confirm repeated gaps within a region, never propagate a low-frequency gap into high-frequency type.
-  for (const p of points) {
-    if (p.status === 'NORMAL') { p.type = 'NORMAL'; continue; }
-    if (p.status !== 'ABNORMAL') continue;
-    if (p.bc === null) { warnings.add('MISSING_BC'); continue; }
-    if (p.bc > p.ac!) continue;
-    const repeated = gaps.filter(g => region(g.frequency) === region(p.frequency) && g.status === 'ABNORMAL').length >= config.minimumConductivePoints;
-    if (p.abg! >= config.significantAbgDb) {
-      if (repeated) p.type = p.bc <= config.normalThresholdDb ? 'CHL' : 'MIXED';
-    } else if (p.bc > config.normalThresholdDb) p.type = 'SNHL';
-  }
   if (valid.length < config.minimumNormalPoints) warnings.add('INSUFFICIENT_DATA');
-  if (valid.length < config.frequencies.length) warnings.add('PARTIAL_AC');
-  const degreeRange = (ps: FrequencyPoint[]) => {
-    const indices = ps.filter(p => p.status === 'ABNORMAL').map(p => config.degrees.findIndex(d => p.ac! <= d.maximum));
-    return indices.length ? [config.degrees[Math.min(...indices)].name, config.degrees[Math.max(...indices)].name] : ['NORMAL', 'NORMAL'];
-  };
-  const findings: Finding[] = [...new Set(affected.map(p => p.type))].map(type => {
-    const ps = affected.filter(p => p.type === type); const [degreeMin, degreeMax] = degreeRange(ps);
-    return { type, degreeMin, degreeMax, pattern: frequencyPattern(ps.map(p => p.frequency), config.frequencies) };
-  });
-  const notch = [4000, 6000].filter(f => {
-    const i = points.findIndex(p => p.frequency === f); const a = points[i - 1]?.ac; const b = points[i]?.ac; const c = points[i + 1]?.ac;
-    return a != null && b != null && c != null && b > config.normalThresholdDb && b - a >= config.notchDifferenceDb && b - c >= config.notchDifferenceDb;
-  });
-  let configuration: EarProfile['configuration'] = 'NONE';
-  if (valid.length >= 3) {
-    const ns = valid.map(p => p.ac!); const first = ns[0]; const last = ns.at(-1)!; const middle = ns.slice(1, -1);
-    const delta = config.shapeDifferenceDb;
-    configuration = notch.length ? 'NOTCH' : Math.max(...ns) - Math.min(...ns) < delta ? 'FLAT' : Math.min(...middle) - Math.max(first, last) >= delta ? 'COOKIE_BITE' : Math.min(first, last) - Math.max(...middle) >= delta ? 'REVERSE_COOKIE_BITE' : ns.every((n,i) => i === 0 || n >= ns[i-1]) && last-first >= delta ? 'SLOPING' : ns.every((n,i) => i === 0 || n <= ns[i-1]) && first-last >= delta ? 'RISING' : 'IRREGULAR';
+  if (config.requiredNormalFrequencies.some(f => !valid.some(p => p.frequency === f))) warnings.add('PARTIAL_AC');
+  if (!affected.length && valid.length >= config.minimumNormalPoints && !warnings.has('NO_RESPONSE_PRESENT') && !warnings.has('INVALID_THRESHOLD') && !warnings.has('CONFLICTING_THRESHOLDS')) type = 'NORMAL';
+  const status = affected.length ? 'HEARING_LOSS' : type === 'NORMAL' ? 'NORMAL' : 'UNKNOWN';
+  const degreeFrom = affected.length ? classifyDegree(Math.min(...affected.map(p => p.ac!)), config) : type === 'NORMAL' ? 'NORMAL' : 'UNKNOWN';
+  const degreeTo = affected.length ? classifyDegree(Math.max(...affected.map(p => p.ac!)), config) : degreeFrom;
+  const regionalAverages = Object.fromEntries((['LOW', 'MID', 'HIGH'] as Region[]).map(r => [r, mean(valid.filter(p => region(p.frequency) === r).map(p => p.ac!))])) as Record<Region, number | null>;
+  // Missing frequencies are never treated as measured normal surroundings.
+  const first = config.frequencies.indexOf(fs[0]);
+  const last = config.frequencies.indexOf(fs.at(-1)!);
+  const bounded = valid.some(p => p.frequency < fs[0] && p.ac! <= config.normalThresholdDb) && valid.some(p => p.frequency > fs.at(-1)! && p.ac! <= config.normalThresholdDb);
+  const isolatedFrequencies = fs.length <= 2 && fs.length > 0 && (fs.length === 1 || last - first === 1) && bounded ? fs : [];
+  if (isolatedFrequencies.length === 1) warnings.add('ISOLATED_THRESHOLD');
+  const regions = new Set(affected.map(p => region(p.frequency)));
+  const hasAllRegions = (['LOW', 'MID', 'HIGH'] as Region[]).every(r => regionalAverages[r] !== null);
+  let frequencyRegion: FrequencyRegion = 'UNKNOWN';
+  if (isolatedFrequencies.length) frequencyRegion = 'ISOLATED_FREQUENCY';
+  else if (hasAllRegions && regions.size) {
+    frequencyRegion = regions.size === 3 || (regions.has('LOW') && regions.has('HIGH')) ? 'BROAD' : regions.size === 2 ? (regions.has('LOW') ? 'LOW_TO_MID' : 'MID_TO_HIGH') : regions.has('LOW') ? 'LOW_FREQUENCY' : regions.has('MID') ? 'MID_FREQUENCY' : 'HIGH_FREQUENCY';
   }
-  const type: LossType = affected.length ? findings.length === 1 ? findings[0].type : 'UNDETERMINED' : valid.length >= config.minimumNormalPoints && !warnings.has('NO_RESPONSE_PRESENT') && !warnings.has('INVALID_THRESHOLD') ? 'NORMAL' : 'UNDETERMINED';
-  if (affected.some(p => p.type === 'UNDETERMINED') || type === 'UNDETERMINED' || warnings.has('NO_RESPONSE_PRESENT') || warnings.has('CONFLICTING_THRESHOLDS') || warnings.has('INVALID_THRESHOLD') || warnings.has('INSUFFICIENT_DATA')) warnings.add('REVIEW_REQUIRED');
-  const confidence = warnings.has('REVIEW_REQUIRED') || warnings.has('ISOLATED_ABG') ? 'LOW' : warnings.size ? 'MEDIUM' : 'HIGH';
-  return { ear, type, points, findings, exactAffectedFrequencies: affected.map(p => p.frequency), frequencyPattern: frequencyPattern(affected.map(p => p.frequency), config.frequencies),
-    abg: { frequencies: gaps.map(p => p.frequency), isolated: gaps.length === 1, conductiveComponentConfirmed: points.some(p => p.type === 'CHL' || p.type === 'MIXED'), pattern: frequencyPattern(gaps.map(p => p.frequency), config.frequencies) },
-    regionalAnalysis: (['LOW','MID','HIGH'] as Region[]).map(r => { const ps = valid.filter(p => region(p.frequency) === r); const [degreeMin, degreeMax] = degreeRange(ps); return { region: r, types: [...new Set(ps.map(p => p.type))], abg: gaps.some(p => region(p.frequency) === r), degreeMin, degreeMax }; }), configuration, notch, confidence, warnings: [...warnings] };
+  const acAt = (f: number) => points.find(p => p.frequency === f)?.ac ?? null;
+  const notches = [3000, 4000, 6000].filter(f => {
+    const before = acAt(f === 6000 ? 4000 : 2000);
+    const after = acAt(f === 3000 ? 4000 : 8000);
+    const at = acAt(f);
+    return at !== null && at > config.normalThresholdDb && before !== null && after !== null && at - before >= config.notchDifferenceDb && at - after >= config.notchRecoveryDb;
+  }).sort((a, b) => acAt(b)! - acAt(a)! || a - b);
+  const notchFrequency = notches[0] ?? null;
+  let configuration: EarProfile['configuration'] = status === 'NORMAL' ? 'NONE' : 'UNKNOWN';
+  const { LOW: low, MID: mid, HIGH: high } = regionalAverages;
+  if (affected.length && valid.length >= config.minimumNormalPoints) {
+    const values = valid.map(p => p.ac!);
+    configuration = notchFrequency !== null ? 'NOTCHED'
+      : low !== null && mid !== null && high !== null && mid - low >= config.shapeDifferenceDb && mid - high >= config.shapeDifferenceDb ? 'COOKIE_BITE'
+      : low !== null && mid !== null && high !== null && low - mid >= config.shapeDifferenceDb && high - mid >= config.shapeDifferenceDb ? 'REVERSE_COOKIE_BITE'
+      : Math.max(...values) - Math.min(...values) <= config.flatRangeDb ? 'FLAT'
+      : low !== null && high !== null && high - low >= config.steepSlopeDifferenceDb ? 'STEEPLY_SLOPING'
+      : low !== null && high !== null && high - low >= config.shapeDifferenceDb ? 'SLOPING'
+      : low !== null && high !== null && low - high >= config.shapeDifferenceDb ? 'RISING' : 'IRREGULAR';
+  }
+  if (type === 'UNKNOWN' || configuration === 'IRREGULAR' || warnings.has('INSUFFICIENT_DATA') || warnings.has('NO_RESPONSE_PRESENT') || warnings.has('INVALID_THRESHOLD') || warnings.has('CONFLICTING_THRESHOLDS')) warnings.add('REVIEW_REQUIRED');
+  const pta = (frequencies: number[]) => {
+    const values = frequencies.map(acAt);
+    return values.every(v => v !== null) ? mean(values as number[]) : null;
+  };
+  return { ear, status, type, points, degreeFrom, degreeTo, frequencyRegion, isolatedFrequencies,
+    exactAffectedFrequencies: fs, airBoneGapFrequencies: gaps.map(p => p.frequency), residualAirBoneGap,
+    configuration, notchFrequency, pta3: pta([500, 1000, 2000]), pta4: pta([500, 1000, 2000, 4000]), regionalAverages,
+    confidence: warnings.has('REVIEW_REQUIRED') ? 'LOW' : warnings.size ? 'MEDIUM' : 'HIGH', warnings: [...warnings] };
 }
+
 export function analyzeAudiometry(right?: AudiometryInput, left?: AudiometryInput, config = audiometryConfig): AudiometryReportProfile {
-  const rightEar = analyzeEar('right', right, config); const leftEar = analyzeEar('left', left, config);
-  const key = (p: EarProfile) => JSON.stringify([p.type, p.findings, p.abg, p.notch, p.warnings]);
-  return { rightEar, leftEar, bilateralEligible: key(rightEar) === key(leftEar), warnings: [...new Set([...rightEar.warnings, ...leftEar.warnings])], interauralDifferences: rightEar.points.flatMap((p,i) => p.ac !== null && leftEar.points[i].ac !== null ? [{ frequency: p.frequency, differenceDb: Math.abs(p.ac - leftEar.points[i].ac!) }] : []) };
+  const rightEar = analyzeEar('right', right, config);
+  const leftEar = analyzeEar('left', left, config);
+  const signed = rightEar.points.flatMap((p, i) => p.ac !== null && leftEar.points[i].ac !== null ? [{ frequency: p.frequency, differenceDb: p.ac - leftEar.points[i].ac! }] : []);
+  const worseRight = signed.filter(p => p.differenceDb > config.symmetryDifferenceDb).length;
+  const worseLeft = signed.filter(p => p.differenceDb < -config.symmetryDifferenceDb).length;
+  let symmetry: SymmetryClassification = 'UNKNOWN';
+  if (signed.length >= config.minimumSymmetryPoints) {
+    if ((signed.length - worseRight - worseLeft) / signed.length >= config.symmetryProportion) symmetry = 'SYMMETRICAL';
+    else if (worseRight + worseLeft >= config.minimumAsymmetryPoints) symmetry = worseLeft === 0 ? 'RIGHT_WORSE' : worseRight === 0 ? 'LEFT_WORSE' : 'ASYMMETRICAL';
+  }
+  const key = (p: EarProfile) => JSON.stringify([p.status, p.type, p.degreeFrom, p.degreeTo, p.configuration, p.frequencyRegion, p.isolatedFrequencies, p.notchFrequency, p.airBoneGapFrequencies, p.residualAirBoneGap, p.warnings]);
+  return { rightEar, leftEar, symmetry, bilateralEligible: symmetry === 'SYMMETRICAL' && rightEar.status !== 'UNKNOWN' && key(rightEar) === key(leftEar),
+    interauralDifferences: signed.map(p => ({ ...p, differenceDb: Math.abs(p.differenceDb) })), warnings: [...new Set([...rightEar.warnings, ...leftEar.warnings])] };
 }
-
-

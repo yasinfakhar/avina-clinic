@@ -23,6 +23,7 @@ export function AudiometrySuggestion({ right, left, onApply }: { right?: Audiome
   return <div className="audiometry-suggestion">
     <button type="button" className="btn secondary" disabled={!hasData} onClick={() => onApply(suggestion.split('\n').map(line => `<p>${line}</p>`).join(''))}>کامنت خودکار</button>
     <small>با زدن دکمه، پیشنهاد جایگزین کامنت فعلی می‌شود و قابل ویرایش است.</small>
+    {hasData && <p dir="ltr" style={{ whiteSpace: 'pre-line' }} aria-label="Suggested audiometry comment">{suggestion}</p>}
     {hasData && profile.warnings.length > 0 && <p role="status">پیشنهاد نیاز به بررسی پزشک دارد. <span>{profile.warnings.map(w => warningLabels[w]).join(' · ')}</span></p>}
   </div>;
 }

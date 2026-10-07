@@ -1,38 +1,84 @@
 # Audiometry suggested comments
 
-The existing patient record owns thresholds (`right/left.audiometry.ac/bc`) and
-editable HTML comments (`audiometricTests.comments`). SQLite persists the record
-as JSON; this feature introduces no additional storage or network dependency.
+The feature is fully local and deterministic, without a model, network request,
+new dependency, or database migration. Existing patient JSON stores thresholds
+and editable HTML comments.
 
-- `audiometry-config.mjs`: clinic thresholds, degree bands, supported frequencies.
-- `audiometry-analysis.ts`: adapter/validation, frequency status, region-local
-  repeated ABG classification, degree ranges, exact frequency patterns, shape and
-  notch detection, confidence, independent ear profiles and bilateral comparison.
-- `audiometry-report.ts`: English clinic wording from structured profiles only.
-- `components/AudiometrySuggestion.tsx`: analyzes current saved thresholds when
-  they change, displays review flags, and applies HTML text only on button click.
-  The existing rich editor permits further manual edits and existing print/save
-  flows receive the same comment. The button explicitly replaces the old comment.
+## Files and architecture
 
-Default normal is <=25 dB; mild 26–40, moderate 41–55, moderately severe 56–70,
-severe 71–90, profound >90, matching the displayed audiogram bands. Inputs use
-existing -10..120 dB limits and 5 dB steps. Significant ABG is >=15 dB, with
-10..<15 flagged borderline. A conductive component requires at least two
-abnormal AC frequencies with gaps within the same region; isolated gaps are
-never sufficient. Unmasked gaps are flagged for review.
+- `audiometry-config.mjs`: injectable clinic rule defaults and degree bands.
+- `audiometry-analysis.ts`: input validation and structured ear/bilateral results.
+- `audiometry-report.ts`: compositional English wording; configurable terminology.
+- `components/AudiometrySuggestion.tsx`: live suggestion and review warnings.
+- `../tests/audiometry-report.test.mjs`: structured-result and wording tests.
 
-Low region includes 125/250/500 Hz; mid includes 1/2 kHz; 3 kHz is assigned to
-the high transition region (thus combined mid/high descriptions when applicable).
-One/two-frequency findings retain exact frequencies. Normal intermediate tested
-frequencies prevent fictitious continuous ranges. Notches require valid immediate
-neighbors and >=15 dB deterioration/recovery, and are checked before composing.
-The shapes are descriptive deterministic heuristics, not diagnostic criteria.
+The suggestion recalculates when thresholds change. Applying it requires the
+existing Auto comment button; threshold changes never replace an existing or
+manually edited comment. The same button reapplies the latest suggestion.
 
-Missing BC is never inferred, including the UI's unavailable 6/8 kHz BC cells.
-Reports may therefore contain known SNHL and separate undetermined-frequency
-loss. NR is not a numeric threshold. Invalid/contradictory data, sparse data and
-undetermined types request review. Partial normal AC results are qualified as
-available tested frequencies only. Degree uses affected thresholds, never PTA.
-Asymmetry differences are returned as data without a diagnostic cutoff.
+## Rules
 
-Run `npm test`, `npx tsc --noEmit`, and `npm run build` for verification.
+Normal is <=20 dB; slight <=25, mild <=40, moderate <=55, moderately severe <=70,
+severe <=90, profound >90. Degree range uses abnormal AC values, not PTA.
+PTA3 requires all of 500/1000/2000; PTA4 additionally requires 4000 Hz. NR is
+stored as an explicit modifier and never contributes a numeric threshold.
+
+Significant ABG is >=15 dB. At least two supported AC/BC pairs, including an
+abnormal AC pair, are needed for an overall loss type. Missing BC at an abnormal
+frequency where BC is supported produces UNKNOWN. Repeated abnormal AC gaps
+(two by default) establish CHL with normal BC or MIXED with abnormal BC.
+Low-only gaps may remain a secondary finding when separately supported mid/high
+SNHL exists and those gaps affect no more than half of abnormal AC frequencies.
+Contradictory AC/BC values force UNKNOWN. Unmasked gaps request review.
+
+Normal hearing has no loss shape. Bounded single/adjacent-pair abnormalities use
+exact frequencies in comments, taking precedence over generic regional wording.
+Notches precede cookie-bite/reverse-cookie-bite, flat, slopes and rising shapes.
+Notches at 3/4/6 kHz require a 15 dB drop and 10 dB recovery with explicit numeric
+anchors (2/4, 2/8 and 4/8 kHz respectively). The deepest candidate wins.
+Flat uses <=20 dB total range; slope/rise uses >=20 dB low/high average difference;
+steep slope uses >=40 dB; cookie-bite patterns use >=20 dB regional differences.
+Irregular, invalid, sparse, NR or unknown-type results lower confidence.
+
+Symmetry needs at least three matching numeric AC frequencies. At least 75%
+within 10 dB counts as symmetrical (10 dB is inclusive). Otherwise at least two
+larger differences establish asymmetry, with direction if consistent. Combined
+reporting additionally requires matching type, degrees, shape, region, isolated
+frequencies, notch, gap findings and warnings. Differing ears retain RE/LE lines.
+
+## Codebase assumptions and specification conflicts
+
+- Preserve the existing 125 Hz input as a low frequency. Treat 3 kHz as the high
+  transition region. BC is supported through 4 kHz, matching the editor; 6/8 kHz
+  BC values are ignored. Supported abnormal AC/BC pairs establish overall type,
+  but loss confined to 6/8 kHz without abnormal supported pairs remains UNKNOWN.
+- Preserve the existing -10..120 dB input limits. The analyzer accepts numeric
+  values between those limits without enforcing the editor's 5 dB increments,
+  so all requested degree boundaries are representable.
+- Standard frequencies 250/500/1000/2000/4000/8000 determine completeness; optional
+  125/3000/6000 entries are not required to call a result complete. Partial normal
+  reports explicitly say they apply to available tested frequencies only.
+- Preserve the app's SNHL/CHL abbreviations and RE/LE labels. Pass a terminology
+  map to either composer to use expanded loss names.
+- The explicit numeric rules take precedence over contradictory examples.
+  Example A contains slight loss at 25 dB and a 45 dB low/high mean difference,
+  therefore it is slight-to-severe, steeply sloping. The low-frequency example
+  with abnormal 1 kHz is LOW_TO_MID, not LOW_FREQUENCY.
+- No settings UI is added; each analyzer accepts an overridden config object.
+
+## Representative comments
+
+- Bilateral normal hearing.
+- Bilateral symmetrical mild flat SNHL.
+- mild to severe sloping SNHL.
+- mild to moderate SNHL at high frequencies.
+- mild to moderate SNHL at 3–4 kHz.
+- moderate flat mixed hearing loss.
+
+Ear fragments start lowercase; the bilateral/RE/LE composer capitalizes complete
+reports. Missing-type wording and review warnings stay visible and editable.
+
+## Verification
+
+Run `node --experimental-strip-types --test tests/audiometry-report.test.mjs`,
+`npm test`, and `npx tsc --noEmit --incremental false`.
