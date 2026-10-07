@@ -3,6 +3,9 @@ export {};
 declare global {
   interface Window {
     desktop?: {
+      listBackups(): Promise<Array<{ id: string; path: string; name: string; createdAt: string; size: number; kind: string; available: boolean }>>;
+      createBackup(): Promise<{ canceled: boolean; backup?: { path: string } }>;
+      restoreBackup(): Promise<{ canceled: boolean; restored?: boolean }>;
       appVersion(): Promise<string>;
       licenseStatus(): Promise<{ active: boolean; licenseId?: string; deviceId?: string; fingerprint: string }>;
       checkForUpdates(): Promise<void>;

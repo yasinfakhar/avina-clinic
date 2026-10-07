@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import electronUpdater from "electron-updater";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, cpSync, writeFileSync, appendFileSync, renameSync, rmSync, statSync, readFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -8,12 +9,25 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { activateLicense, machineFingerprint, readActivation } from "./licensing.mjs";
 import { getReleaseNotesForVersion } from "./release-notes.mjs";
+import { backupName, createBackupStore, isWithin } from "./backup.mjs";
 
 const { autoUpdater } = electronUpdater;
 
 const electronDirectory = path.dirname(fileURLToPath(import.meta.url));
 const applicationRoot = path.resolve(electronDirectory, "..");
+if (!app.requestSingleInstanceLock()) app.exit(0);
 const dataDirectory = path.join(app.getPath("userData"), "data");
+const backupStore = createBackupStore(app.getPath("userData"));
+backupStore.recover();
+let backupBusy = false;
+let activeDataTasks = 0;
+function dataHandler(channel, handler) {
+  ipcMain.handle(channel, async (...args) => {
+    if (backupBusy) throw new Error("عملیات پشتیبان‌گیری در حال اجراست.");
+    activeDataTasks += 1;
+    try { return await handler(...args); } finally { activeDataTasks -= 1; }
+  });
+}
 const logDirectory = path.join(dataDirectory, "logs");
 const startupLog = path.join(logDirectory, "desktop.log");
 const acknowledgedReleaseFile = path.join(dataDirectory, "acknowledged-release.json");
@@ -34,6 +48,7 @@ let serverProcess;
 let appWindow;
 let localOrigin;
 let quittingForUpdate = false;
+const internalToken = randomUUID();
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -51,15 +66,15 @@ async function waitForServer(origin) {
   throw new Error("Local application server did not start");
 }
 
-async function startServer() {
-  const port = await freePort();
+async function startServer(port = null) {
+  port ??= await freePort();
   localOrigin = `http://127.0.0.1:${port}`;
   const packagedServer = path.join(process.resourcesPath, "standalone", "server.js");
   const script = app.isPackaged ? packagedServer : path.join(applicationRoot, "node_modules", "next", "dist", "bin", "next");
   const args = app.isPackaged ? [script] : [script, "dev", "-p", String(port), "-H", "127.0.0.1"];
   serverProcess = spawn(process.execPath, args, {
     cwd: app.isPackaged ? path.dirname(script) : applicationRoot,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_PATH: app.isPackaged ? path.join(process.resourcesPath, "standalone", "runtime_modules") : process.env.NODE_PATH, PORT: String(port), HOSTNAME: "127.0.0.1", AUDIOLOGY_DATA_DIR: dataDirectory, INITIAL_ADMIN_PASSWORD: process.env.INITIAL_ADMIN_PASSWORD || releaseConfig.initialAdminPassword || "ChangeMe!2026", LICENSE_SERVICE_URL: licenseServiceUrl, LICENSE_PUBLIC_KEY: licensePublicKey },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_PATH: app.isPackaged ? path.join(process.resourcesPath, "standalone", "runtime_modules") : process.env.NODE_PATH, PORT: String(port), HOSTNAME: "127.0.0.1", AUDIOLOGY_DATA_DIR: dataDirectory, AVINA_INTERNAL_TOKEN: internalToken, INITIAL_ADMIN_PASSWORD: process.env.INITIAL_ADMIN_PASSWORD || releaseConfig.initialAdminPassword || "ChangeMe!2026", LICENSE_SERVICE_URL: licenseServiceUrl, LICENSE_PUBLIC_KEY: licensePublicKey },
     stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
   });
   serverProcess.stdout?.on("data", (value) => console.log(`[server] ${value}`));
@@ -112,6 +127,17 @@ async function stopServer() {
   if (!(await waitForProcessExit(child, 4_000))) {
     throw new Error(`Local application server pid=${child.pid} did not stop`);
   }
+}
+
+async function stopServerForBackup() {
+  const child = serverProcess;
+  if (!child) throw new Error("سرور برنامه در دسترس نیست.");
+  const response = await fetch(`${localOrigin}/api/desktop/health`, {
+    method: "POST", headers: { Authorization: `Bearer ${internalToken}` }, signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error("توقف امن برنامه برای بکاپ ناموفق بود.");
+  if (!(await waitForProcessExit(child, 30_000))) throw new Error("توقف برنامه طول کشید؛ عملیات بکاپ انجام نشد. دوباره تلاش کنید.");
+  serverProcess = undefined;
 }
 
 function secureWindowOptions() {
@@ -248,6 +274,7 @@ ipcMain.handle("update:acknowledge-release", (_event, version) => {
   return true;
 });
 ipcMain.on("update:install", () => {
+  if (backupBusy || activeDataTasks) return;
   void (async () => {
     quittingForUpdate = true;
     sendUpdate("installing");
@@ -259,8 +286,8 @@ ipcMain.on("update:install", () => {
     sendUpdate("error", { message: error instanceof Error ? error.message : String(error) });
   });
 });
-ipcMain.handle("report:generate", (_event, recordId) => generateReport(recordId));
-ipcMain.handle("report:generate-open", async (_event, recordId) => {
+dataHandler("report:generate", (_event, recordId) => generateReport(recordId));
+dataHandler("report:generate-open", async (_event, recordId) => {
   const report = await generateReport(recordId);
   const error = await shell.openPath(report.outputPath);
   if (error) throw new Error(`Could not open generated PDF: ${error}`);
@@ -275,7 +302,7 @@ function isValidInvoice(invoice) {
     invoice.items.every((item) => item && typeof item.id === "string" && typeof item.name === "string" && item.name.trim() && item.name.length <= 200 && Number.isSafeInteger(item.price) && item.price >= 0);
 }
 
-ipcMain.handle("invoice:save-pdf", async (event, recordId, invoice, action = "open") => {
+dataHandler("invoice:save-pdf", async (event, recordId, invoice, action = "open") => {
   if (typeof recordId !== "string" || !/^A-[A-Za-z0-9_-]+$/.test(recordId)) throw new Error("Invalid record ID");
   if (!isValidInvoice(invoice)) throw new Error("Invalid invoice");
   if (action !== "open" && action !== "save-as") throw new Error("Invalid invoice action");
@@ -343,7 +370,97 @@ ipcMain.handle("invoice:save-pdf", async (event, recordId, invoice, action = "op
   }
 });
 
-app.on("before-quit", () => { if (serverProcess && !serverProcess.killed) serverProcess.kill("SIGTERM"); });
+ipcMain.handle("backup:list", () => backupStore.history());
+
+async function runBackupOperation(event, restoring) {
+  if (!appWindow || event.sender !== appWindow.webContents || !event.senderFrame?.url.startsWith(`${localOrigin}/`)) throw new Error("درخواست نامعتبر است.");
+  if (backupBusy || activeDataTasks || quittingForUpdate) throw new Error("لطفاً تا پایان عملیات فعلی صبر کنید.");
+  backupBusy = true;
+  let maintenance;
+  let staged;
+  let stopped = false;
+  let result;
+  let failure;
+  let clearedWindow = false;
+  let recoveryFailed = false;
+  const port = Number(new URL(localOrigin).port);
+  const preventClose = (closeEvent) => closeEvent.preventDefault();
+  try {
+    const legacyPending = await appWindow.webContents.executeJavaScript("Boolean(localStorage.getItem('audiology-records'))");
+    if (legacyPending) throw new Error("ابتدا انتقال پرونده‌های قدیمی باید کامل شود. برنامه را دوباره باز کنید و پس از نمایش پرونده‌ها تلاش کنید.");
+    const selected = restoring
+      ? await dialog.showOpenDialog(appWindow, { title: "انتخاب فایل بکاپ آوینا", filters: [{ name: "Avina Backup", extensions: ["zip"] }], properties: ["openFile"] })
+      : await dialog.showSaveDialog(appWindow, { title: "ذخیرهٔ بکاپ", defaultPath: path.join(app.getPath("documents"), backupName()), filters: [{ name: "ZIP", extensions: ["zip"] }] });
+    const file = restoring ? selected.filePaths?.[0] : selected.filePath;
+    if (selected.canceled || !file) return { canceled: true };
+    if (!restoring && isWithin(dataDirectory, file)) throw new Error("محل ذخیرهٔ بکاپ باید خارج از پوشهٔ data باشد.");
+    const answer = await dialog.showMessageBox(appWindow, {
+      type: restoring ? "warning" : "question", title: restoring ? "بازیابی اطلاعات" : "گرفتن بکاپ",
+      message: restoring ? "اطلاعات فعلی با بکاپ جایگزین شود؟" : "برنامه برای گرفتن بکاپ موقتاً متوقف می‌شود.",
+      detail: restoring ? "از اطلاعات فعلی نسخهٔ اضطراری نگه داشته می‌شود. پس از بازیابی باید دوباره وارد شوید. تغییرات ذخیره‌نشده از دست می‌روند؛ لایسنس این دستگاه حفظ می‌شود." : "پیش از ادامه، تغییرات پرونده‌ها را ذخیره کنید.",
+      buttons: ["انصراف", restoring ? "بازیابی" : "گرفتن بکاپ"], defaultId: 0, cancelId: 0,
+    });
+    if (answer.response !== 1) return { canceled: true };
+    appWindow.on("close", preventClose);
+    maintenance = new BrowserWindow({ parent: appWindow, modal: true, width: 500, height: 280, resizable: false, closable: false, minimizable: false, maximizable: false, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    await maintenance.loadFile(path.join(electronDirectory, "backup-maintenance.html"));
+    if (restoring) staged = await backupStore.stage(file);
+    if (restoring) {
+      await appWindow.loadFile(path.join(electronDirectory, "backup-maintenance.html"));
+      clearedWindow = true;
+    }
+    // All desktop file writers are excluded by backupBusy. Stop the web server
+    // before touching data and let SQLite recover any interrupted transaction.
+    stopped = true;
+    await stopServerForBackup();
+    if (restoring) {
+      mkdirSync(backupStore.recoveryRoot, { recursive: true });
+      const emergency = path.join(backupStore.recoveryRoot, `${Date.now()}_${backupName()}`);
+      await backupStore.save(emergency, "emergency");
+      backupStore.replace(staged);
+      await startServer(port);
+      // Confirm restored data can actually be opened before committing the swap.
+      const health = await fetch(`${localOrigin}/api/desktop/health`, { headers: { Authorization: `Bearer ${internalToken}` }, signal: AbortSignal.timeout(30_000) });
+      if (!health.ok) throw new Error("راه‌اندازی اطلاعات بازیابی‌شده ناموفق بود.");
+      backupStore.commit();
+      stopped = false;
+      await appWindow.loadURL(localOrigin);
+      clearedWindow = false;
+      result = { canceled: false, restored: true };
+    } else {
+      result = { canceled: false, backup: await backupStore.save(file) };
+    }
+  } catch (error) {
+    failure = error;
+    if (stopped) {
+      try { await stopServer(); backupStore.recover(); }
+      catch (recoveryError) { recoveryFailed = true; failure = new Error(`${error.message}\nبازیابی اضطراری ناموفق بود: ${recoveryError.message}`); }
+    }
+  } finally {
+    if (stopped && !recoveryFailed) {
+      try { await startServer(port); }
+      catch (error) { failure = new Error(`${failure?.message || ""}\nراه‌اندازی مجدد ناموفق بود؛ برنامه را دوباره باز کنید. ${error.message}`); }
+    }
+    if (staged) { try { backupStore.cleanStage(staged); } catch (error) { log("Unable to clean restore staging", error); } }
+    if (clearedWindow && !recoveryFailed) {
+      try { await appWindow.loadURL(localOrigin); } catch (error) { log("Unable to reload after restore", error); }
+    }
+    maintenance?.destroy();
+    appWindow?.removeListener("close", preventClose);
+    backupBusy = false;
+  }
+  if (failure) {
+    log("Backup operation failed", failure);
+    if (restoring) await dialog.showMessageBox(appWindow, { type: "error", title: "بازیابی ناموفق", message: failure.message });
+    throw failure;
+  }
+  if (restoring && result?.restored) await dialog.showMessageBox(appWindow, { type: "info", title: "بازیابی موفق", message: "اطلاعات بازیابی شد. با رمز عبور موجود در بکاپ وارد شوید." });
+  return result;
+}
+ipcMain.handle("backup:create", (event) => runBackupOperation(event, false));
+ipcMain.handle("backup:restore", (event) => runBackupOperation(event, true));
+
+app.on("before-quit", (event) => { if (backupBusy) { event.preventDefault(); return; } if (serverProcess && !serverProcess.killed) serverProcess.kill("SIGTERM"); });
 app.on("window-all-closed", () => { if (process.platform !== "darwin" || quittingForUpdate) app.quit(); });
 
 process.on("uncaughtException", (error) => { log("Uncaught exception", error); dialog.showErrorBox("Avina Audiology startup error", `${error.message}\n\nLog: ${startupLog}`); });

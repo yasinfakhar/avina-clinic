@@ -10,11 +10,13 @@ import React, {
   useState,
 } from "react";
 import { AudiometrySuggestion } from "./components/AudiometrySuggestion";
+import { TympanometrySuggestion } from "./components/TympanometrySuggestion";
 import { BirthDatePicker } from "./components/BirthDatePicker";
 import { jalaliDateTimeToIso } from "./jalali-date";
 import { AutocompleteInput } from "./components/AutocompleteInput";
 import { ImageAnnotator } from "./components/ImageAnnotator";
 import { SmsSettings } from "./components/SmsSettings";
+import { BackupMenu } from "./components/BackupMenu";
 import { dataUrlToBlob } from "./image-data";
 import { toEnglishDigits } from "./digits";
 import { sanitizeEnglishName, sanitizePersianName } from "./name-input";
@@ -523,7 +525,7 @@ function AudiometryMarker({
   );
   const label = `${row.toUpperCase()}، ${frequency} هرتز، ${threshold} دسی‌بل`;
   return (
-    <g className="audiometry-marker" role="img" aria-label={label} tabIndex={0}>
+    <g className="audiometry-marker" role="img" aria-label={label}>
       <title>{label}</title>
       <circle
         cx={x}
@@ -1312,6 +1314,7 @@ export default function Home() {
               </div>
             </section>}
           </div>
+          <BackupMenu />
           <button className="settings-button" title="تنظیمات" aria-label="تنظیمات" onClick={() => setView("settings")}><Icon name="settings" /></button>
           <button
             className="logout"
@@ -1897,6 +1900,26 @@ function Wizard({
     });
   const updateAudiometry = (side: "right" | "left", value: Audiometry) =>
     updateEar(side, { audiometry: value });
+  const updateTympanometryComment = (text: string) =>
+    setRecord((current) => ({
+      ...current,
+      right: {
+        ...current.right,
+        tympanometry: {
+          ...emptyTympanometry(),
+          ...current.right.tympanometry,
+          comment: text,
+        },
+      },
+      left: {
+        ...current.left,
+        tympanometry: {
+          ...emptyTympanometry(),
+          ...current.left.tympanometry,
+          comment: text,
+        },
+      },
+    }));
   const updateSpeechAudiometry = (
     side: "right" | "left",
     field: SpeechAudiometryField,
@@ -2252,6 +2275,13 @@ function Wizard({
                 })}
               </div>
               <CombinedDoctorComment
+                action={
+                  <TympanometrySuggestion
+                    right={record.right.tympanometry?.type}
+                    left={record.left.tympanometry?.type}
+                    onApply={updateTympanometryComment}
+                  />
+                }
                 dearDoctor={
                   record.right.tympanometry?.dearDoctor ||
                   record.left.tympanometry?.dearDoctor ||
@@ -2264,27 +2294,7 @@ function Wizard({
                 onDearDoctorChange={(text) => {
                   updateTympanometry("right", { dearDoctor: text });
                 }}
-                onCommentChange={(text) =>
-                  setRecord((current) => ({
-                    ...current,
-                    right: {
-                      ...current.right,
-                      tympanometry: {
-                        ...emptyTympanometry(),
-                        ...current.right.tympanometry,
-                        comment: text,
-                      },
-                    },
-                    left: {
-                      ...current.left,
-                      tympanometry: {
-                        ...emptyTympanometry(),
-                        ...current.left.tympanometry,
-                        comment: text,
-                      },
-                    },
-                  }))
-                }
+                onCommentChange={updateTympanometryComment}
               />
             </>
           )}
@@ -2513,11 +2523,11 @@ function Wizard({
                 >
                   <Icon name="file" /> خروجی PDF
                 </button>
-                <button
+                {/* <button
                   onClick={() => notify("لینک گزارش برای ارسال پیامک آماده شد")}
                 >
                   <Icon name="sms" /> ارسال با پیامک
-                </button>
+                </button> */}
               </div>
             </>
           )}
@@ -3554,12 +3564,12 @@ function TympanometrySummaryChart({
   value: Tympanometry;
 }) {
   const xTicks = Array.from({ length: 10 }, (_, i) => -600 + i * 100),
-    yTicks = Array.from({ length: 6 }, (_, i) => 2.5 - i * 0.5);
+    yTicks = Array.from({ length: 8 }, (_, i) => 3.5 - i * 0.5);
   const plot = { left: 54, right: 574, top: 18, bottom: 248 };
   const x = (pressure: number) =>
       plot.left + ((pressure + 600) / 900) * (plot.right - plot.left),
     y = (compliance: number) =>
-      plot.bottom - (compliance / 2.5) * (plot.bottom - plot.top);
+      plot.bottom - (compliance / 3.5) * (plot.bottom - plot.top);
   const smoothPath = (points: TympanometryPoint[]) => {
     if (!points.length) return "";
     if (points.length === 1)
@@ -3581,7 +3591,7 @@ function TympanometrySummaryChart({
       peakPressure >= -600 &&
       peakPressure <= 300 &&
       peakCompliance >= 0 &&
-      peakCompliance <= 2.5;
+      peakCompliance <= 3.5;
   const automaticPoints = hasPeak
     ? Array.from({ length: 51 }, (_, i) => {
         const offset = -300 + i * 10,
@@ -3692,12 +3702,12 @@ function TympanometryCard({
     pointsRef.current = value.points;
   }, [value.points]);
   const xTicks = Array.from({ length: 10 }, (_, i) => -600 + i * 100),
-    yTicks = Array.from({ length: 6 }, (_, i) => 2.5 - i * 0.5);
+    yTicks = Array.from({ length: 8 }, (_, i) => 3.5 - i * 0.5);
   const plot = { left: 54, right: 574, top: 18, bottom: 248 };
   const x = (pressure: number) =>
       plot.left + ((pressure + 600) / 900) * (plot.right - plot.left),
     y = (compliance: number) =>
-      plot.bottom - (compliance / 2.5) * (plot.bottom - plot.top);
+      plot.bottom - (compliance / 3.5) * (plot.bottom - plot.top);
   const eventPoint = (event: React.PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect(),
       px = ((event.clientX - rect.left) / rect.width) * 620,
@@ -3710,7 +3720,7 @@ function TympanometryCard({
           (-600 + ((px - plot.left) / (plot.right - plot.left)) * 900) * 10,
         ) / 10,
       compliance:
-        Math.round(((plot.bottom - py) / (plot.bottom - plot.top)) * 250) / 100,
+        Math.round(((plot.bottom - py) / (plot.bottom - plot.top)) * 350) / 100,
     };
   };
   const appendPoint = (point: TympanometryPoint) => {
@@ -3762,7 +3772,7 @@ function TympanometryCard({
       peakPressure >= -600 &&
       peakPressure <= 300 &&
       peakCompliance >= 0 &&
-      peakCompliance <= 2.5;
+      peakCompliance <= 3.5;
   const updateReflex = (
     row: "ipsi" | "contra",
     frequency: keyof ReflexValues,
@@ -4194,6 +4204,7 @@ function AudiometryCardView({
                         placeholder="dB"
                       />
                       <select
+                        tabIndex={-1}
                         value={cell.modifier}
                         onChange={(event) =>
                           updateCell(row, frequency, {

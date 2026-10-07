@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("desktop", {
   appVersion: () => ipcRenderer.invoke("app:version"),
+  listBackups: () => ipcRenderer.invoke("backup:list"),
+  createBackup: () => ipcRenderer.invoke("backup:create"),
+  restoreBackup: () => ipcRenderer.invoke("backup:restore"),
   licenseStatus: () => ipcRenderer.invoke("license:status"),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   releaseNotes: () => ipcRenderer.invoke("update:release-notes"),
