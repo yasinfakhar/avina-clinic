@@ -111,3 +111,13 @@ test("shows release notes once on the first launch of an installed version", () 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("trial credentials require valid signed server expiry", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const base = { status: "active", machineFingerprint: "device-a", licenseId: "trial-1", deviceId: "trial-1", licenseType: "trial" };
+  assert.equal(verifyActivationToken(signedToken(base, privateKey), publicKey, "device-a"), null);
+  assert.equal(verifyActivationToken(signedToken({ ...base, serverTime: 100, expiresAt: 100 }, privateKey), publicKey, "device-a"), null);
+  const valid = { ...base, serverTime: 100, expiresAt: 200 };
+  // Trial time is checked online, independently of the workstation clock.
+  assert.deepEqual(verifyActivationToken(signedToken(valid, privateKey), publicKey, "device-a"), valid);
+});

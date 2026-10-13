@@ -47,3 +47,5 @@ next-env.d.ts
 /electron/release-config.json
 /electron/app-update.yml
 /.certificates/
+
+!.env.license.example

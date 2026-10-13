@@ -108,3 +108,11 @@ UPDATE_BASE_URL=https://licence.sayahub.ir/avina/update/windows \
 ```
 
 This writes `latest.yml`, the NSIS installer, and its blockmap to the repository's `windows/` directory. Copy those files into the persistent service volume at `/data/updates/windows`. A production build still requires the release environment variables documented by `release:validate`, including the Windows code-signing certificate.
+
+## Trial license
+
+The shared trial key defaults to AVINA-TRIAL. Configure TRIAL_LICENSE_KEY and TRIAL_DURATION_HOURS=14 (hours; default 14) in the server .env and recreate the service with the Compose deploy command above. Duration changes apply to new trials; existing trials retain their original expiry.
+
+Each machine fingerprint can redeem a trial once. Trial records persist in the server database, so deleting local files or reinstalling does not reset eligibility. Keep the server volume and database backups. Changing the shared key does not reset eligibility. Hardware/OS identity changes can appear as a different machine.
+
+Trials require HTTPS verification at startup and every 30 seconds (10-second request timeout), with signed server time and a fresh nonce; expiry is enforced using an in-process timer rather than the computer clock. When offline or expired, access locks and the internal server stops. A paid key can be entered on the activation screen; the same patient database and files are reused. Paid licenses retain their existing offline behavior.

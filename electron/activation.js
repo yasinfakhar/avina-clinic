@@ -1,5 +1,6 @@
 const form = document.querySelector("#activation-form");
 const status = document.querySelector("#status");
+window.desktop.licenseStatus().then((value) => { if (value.error) status.textContent = value.error; }).catch(() => {});
 window.activation.fingerprint().then((value) => { document.querySelector("#fingerprint").textContent = `Device: ${value}`; });
 form.addEventListener("submit", async (event) => {
   event.preventDefault(); status.textContent = "در حال فعال‌سازی…";

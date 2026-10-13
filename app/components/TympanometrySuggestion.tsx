@@ -12,8 +12,8 @@ export function TympanometrySuggestion({
   const rightType = right?.trim() || "";
   const leftType = left?.trim() || "";
   const lines = rightType && rightType === leftType
-    ? [`Type ${rightType} for both ears`]
-    : [rightType && `RE: Type ${rightType}`, leftType && `LE: Type ${leftType}`].filter(Boolean);
+    ? [`Type ${rightType} in both ears.`]
+    : [rightType && `RE: Type ${rightType}.`, leftType && `LE: Type ${leftType}.`].filter(Boolean);
 
   return (
     <div className="audiometry-suggestion">

@@ -7,7 +7,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { activateLicense, machineFingerprint, readActivation } from "./licensing.mjs";
+import { activateLicense, checkTrial, machineFingerprint, readActivation } from "./licensing.mjs";
 import { getReleaseNotesForVersion } from "./release-notes.mjs";
 import { backupName, createBackupStore, isWithin } from "./backup.mjs";
 
@@ -155,6 +155,28 @@ function lockWindow(window) {
   window.webContents.on("console-message", (_event, level, message) => { if (level >= 2) log(`Renderer console level=${level}`, message); });
 }
 
+let trialTimer;
+let trialExpiryTimer;
+let trialAccess = false;
+let trialLockReason = "";
+async function enforceTrial() {
+  clearTimeout(trialTimer); clearTimeout(trialExpiryTimer);
+  const stored = readActivation(licenseFile, licensePublicKey, { allowTrial: true });
+  if (!stored || readActivation(licenseFile, licensePublicKey)) return;
+  try {
+    const payload = await checkTrial({ serviceUrl: licenseServiceUrl, publicKey: licensePublicKey, licenseFile });
+    trialAccess = true; trialLockReason = "";
+    trialExpiryTimer = setTimeout(lockTrial, Math.min(2147483647, Math.max(1, payload.expiresAt - payload.serverTime)));
+    trialTimer = setTimeout(enforceTrial, 30_000);
+  } catch (error) { log("Trial verification failed", error); trialLockReason = error.message; await lockTrial(); }
+}
+async function lockTrial() {
+  clearTimeout(trialTimer); clearTimeout(trialExpiryTimer); trialAccess = false;
+  trialLockReason ||= "Trial expired. Please purchase a license.";
+  // Navigate the existing window first to keep window-all-closed from quitting the app.
+  if (appWindow && !appWindow.isDestroyed()) await appWindow.loadFile(path.join(electronDirectory, "activation.html"));
+  await stopServer();
+}
 async function createApplicationWindow() {
   await startServer();
   appWindow = new BrowserWindow({ width: 1440, height: 940, minWidth: 1024, minHeight: 700, show: false, backgroundColor: "#f5f7fb", webPreferences: secureWindowOptions() });
@@ -241,13 +263,22 @@ ipcMain.handle("app:version", () => app.getVersion());
 ipcMain.handle("license:status", () => {
   const stored = readActivation(licenseFile, licensePublicKey);
   const payload = stored ? JSON.parse(Buffer.from(stored.token.split(".")[1], "base64url").toString("utf8")) : null;
-  return payload ? { active: true, licenseId: payload.licenseId, deviceId: payload.deviceId, fingerprint: machineFingerprint() } : { active: false, fingerprint: machineFingerprint() };
+  return payload ? { active: true, licenseId: payload.licenseId, deviceId: payload.deviceId, fingerprint: machineFingerprint() } : { active: false, fingerprint: machineFingerprint(), error: trialLockReason };
 });
 ipcMain.handle("license:fingerprint", () => machineFingerprint());
 ipcMain.handle("license:activate", async (_event, licenseKey) => {
   if (typeof licenseKey !== "string" || licenseKey.length < 8 || licenseKey.length > 200) throw new Error("کلید مجوز معتبر نیست.");
   const result = await activateLicense({ licenseKey, serviceUrl: licenseServiceUrl, publicKey: licensePublicKey, licenseFile, appVersion: app.getVersion() });
-  appWindow.destroy(); await offerLegacyImport(); await createApplicationWindow(); return result;
+  if (result.licenseType === "trial") {
+    await checkTrial({ serviceUrl: licenseServiceUrl, publicKey: licensePublicKey, licenseFile });
+    trialAccess = true;
+  }
+  clearTimeout(trialTimer); clearTimeout(trialExpiryTimer);
+  trialLockReason = ""; trialAccess = result.licenseType === "trial";
+  const previousWindow = appWindow;
+  await stopServer();
+  await offerLegacyImport(); await createApplicationWindow(); previousWindow.destroy();
+  void enforceTrial(); return result;
 });
 ipcMain.handle("update:check", async () => {
   if (!app.isPackaged) return sendUpdate("development");
@@ -475,8 +506,13 @@ async function bootstrap() {
       else callback({ responseHeaders: details.responseHeaders });
     });
     configureUpdater();
-    if (readActivation(licenseFile, licensePublicKey) || (!app.isPackaged && (!licenseServiceUrl || !licensePublicKey))) { await offerLegacyImport(); await createApplicationWindow(); }
+    if (readActivation(licenseFile, licensePublicKey, { allowTrial: true }) && !readActivation(licenseFile, licensePublicKey)) {
+      try { await checkTrial({ serviceUrl: licenseServiceUrl, publicKey: licensePublicKey, licenseFile }); trialAccess = true; }
+      catch (error) { log("Trial requires online verification", error); trialLockReason = error.message; }
+    }
+    if (trialAccess || readActivation(licenseFile, licensePublicKey) || (!app.isPackaged && (!licenseServiceUrl || !licensePublicKey))) { await offerLegacyImport(); await createApplicationWindow(); }
     else await createActivationWindow();
+    if (trialAccess) void enforceTrial();
   } catch (error) {
     log("Bootstrap failed", error);
     await app.whenReady().catch(() => {});

@@ -5,6 +5,9 @@ import http from "node:http";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+const trialKey = process.env.TRIAL_LICENSE_KEY || "AVINA-TRIAL";
+const trialHours = Number(process.env.TRIAL_DURATION_HOURS || 14);
+if (!Number.isFinite(trialHours) || trialHours <= 0 || trialHours > 87600) throw new Error("Invalid TRIAL_DURATION_HOURS");
 const port = Number(process.env.PORT || 8787);
 const dataDirectory = path.resolve(process.env.DATA_DIR || "/data");
 const adminToken = process.env.LICENSE_ADMIN_TOKEN || "";
@@ -28,6 +31,7 @@ const database = new DatabaseSync(path.join(dataDirectory, "licenses.sqlite"));
 database.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
+  CREATE TABLE IF NOT EXISTS trials (machine_fingerprint TEXT PRIMARY KEY, id TEXT NOT NULL, started_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS licenses (
     id TEXT PRIMARY KEY,
     key_hash TEXT NOT NULL UNIQUE,
@@ -136,6 +140,13 @@ async function handleActivation(request, response) {
   if (rateLimited(request, "activation")) return json(response, 429, { error: "Too many activation attempts" });
   const input = await body(request);
   if (typeof input.licenseKey !== "string" || !validFingerprint(input.machineFingerprint)) return json(response, 400, { error: "Invalid activation request" });
+  if (input.licenseKey.trim() === trialKey) {
+    if (database.prepare("SELECT id FROM trials WHERE machine_fingerprint = ?").get(input.machineFingerprint)) return json(response, 403, { error: "Trial already used on this device. Please purchase a license." });
+    const now = Date.now();
+    const trial = { id: id("trial"), started_at: now, expires_at: now + Math.round(trialHours * 3600000) };
+    database.prepare("INSERT INTO trials (machine_fingerprint, id, started_at, expires_at) VALUES (?, ?, ?, ?)").run(input.machineFingerprint, trial.id, now, trial.expires_at);
+    return trialResponse(response, trial, input.machineFingerprint);
+  }
   const license = database.prepare("SELECT * FROM licenses WHERE key_hash = ?").get(sha256(input.licenseKey.trim())) ;
   if (!license || license.status !== "active") return json(response, 403, { error: "License key is invalid or revoked" });
   if (license.machine_fingerprint && license.machine_fingerprint !== input.machineFingerprint) return json(response, 409, { error: "License key is already activated on another computer" });
@@ -148,6 +159,19 @@ async function handleActivation(request, response) {
   return json(response, 200, { token, licenseId: license.id, deviceId });
 }
 
+function trialResponse(response, trial, fingerprint, nonce) {
+  const now = Date.now();
+  if (trial.expires_at <= now) return json(response, 403, { error: "Trial expired. Please purchase a license." });
+  return json(response, 200, { token: signedToken({ status: "active", licenseType: "trial", licenseId: trial.id, deviceId: trial.id, machineFingerprint: fingerprint, serverTime: now, expiresAt: trial.expires_at, exp: Math.ceil(trial.expires_at / 1000), nonce }) });
+}
+async function handleTrialCheck(request, response) {
+  const input = await body(request);
+  const activation = verifyToken(String(input.activationToken || ""));
+  if (!activation || activation.licenseType !== "trial" || activation.machineFingerprint !== input.machineFingerprint || !/^[a-f0-9]{48}$/.test(input.nonce || "")) return json(response, 403, { error: "Invalid trial verification" });
+  const trial = database.prepare("SELECT * FROM trials WHERE machine_fingerprint = ? AND id = ?").get(input.machineFingerprint, activation.licenseId);
+  if (!trial) return json(response, 403, { error: "Trial not found" });
+  return trialResponse(response, trial, input.machineFingerprint, input.nonce);
+}
 async function handleRecovery(request, response) {
   if (rateLimited(request, "recovery", 6)) return json(response, 429, { error: "Too many recovery attempts" });
   const input = await body(request); const activation = verifyToken(String(input.activationToken || ""));
@@ -245,6 +269,7 @@ const server = http.createServer(async (request, response) => {
       const releases = releaseList(); return json(response, 200, { latest: releases[0] || null, releases });
     }
     if (request.method === "GET" && url.pathname.startsWith("/avina/update/windows/")) return serveUpdateFile(response, decodeURIComponent(url.pathname.slice("/avina/update/windows/".length)));
+    if (request.method === "POST" && url.pathname === "/v1/trials/check") return await handleTrialCheck(request, response);
     if (request.method === "POST" && url.pathname === "/v1/activations") return await handleActivation(request, response);
     if (request.method === "POST" && url.pathname === "/v1/password-recovery/verify") return await handleRecovery(request, response);
     if (url.pathname.startsWith("/admin/")) return await handleAdmin(request, response, url);

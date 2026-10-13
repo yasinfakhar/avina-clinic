@@ -1,4 +1,4 @@
-import { createHash, verify } from "node:crypto";
+import { createHash, randomBytes, verify } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import machineIdPackage from "node-machine-id";
@@ -45,14 +45,16 @@ export function verifyActivationToken(token, publicKey, fingerprint = machineFin
     if (!valid) return null;
     const payload = JSON.parse(decodePart(parts[1]).toString("utf8"));
     if (payload.status !== "active" || payload.machineFingerprint !== fingerprint || !payload.licenseId || !payload.deviceId) return null;
+    if (payload.licenseType === "trial" && (!Number.isFinite(payload.expiresAt) || !Number.isFinite(payload.serverTime) || payload.expiresAt <= payload.serverTime)) return null;
     return payload;
   } catch { return null; }
 }
 
-export function readActivation(file, publicKey) {
+export function readActivation(file, publicKey, { allowTrial = false } = {}) {
   try {
     const stored = JSON.parse(readFileSync(file, "utf8"));
-    return verifyActivationToken(stored.token, publicKey) ? stored : null;
+    const payload = verifyActivationToken(stored.token, publicKey);
+    return payload && (allowTrial || payload.licenseType !== "trial") ? stored : null;
   } catch { return null; }
 }
 
@@ -60,11 +62,29 @@ export async function activateLicense({ licenseKey, serviceUrl, publicKey, licen
   if (!/^https:\/\//i.test(serviceUrl)) throw new Error("نشانی سرویس مجوز باید HTTPS باشد.");
   const fingerprint = machineFingerprint();
   const response = await fetch(`${serviceUrl.replace(/\/$/, "")}/v1/activations`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ licenseKey, machineFingerprint: fingerprint, appVersion, platform: `${process.platform}-${process.arch}` }),
   });
   const body = await response.json();
   if (!response.ok || !body.token || !verifyActivationToken(body.token, publicKey, fingerprint)) throw new Error(body.error || "فعال‌سازی مجوز ناموفق بود.");
   writeFileSync(licenseFile, JSON.stringify({ token: body.token, activatedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
   return verifyActivationToken(body.token, publicKey, fingerprint);
+}
+
+export async function checkTrial({ serviceUrl, publicKey, licenseFile }) {
+  const stored = readActivation(licenseFile, publicKey, { allowTrial: true });
+  if (!stored) throw new Error("Invalid license");
+  const fingerprint = machineFingerprint();
+  const payload = verifyActivationToken(stored.token, publicKey, fingerprint);
+  if (payload.licenseType !== "trial") return payload;
+  if (!serviceUrl.toLowerCase().startsWith("https://")) throw new Error("HTTPS required");
+  const nonce = randomBytes(24).toString("hex");
+  const response = await fetch(serviceUrl.replace(/\/$/, "") + "/v1/trials/check", {
+    signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ activationToken: stored.token, machineFingerprint: fingerprint, nonce }),
+  });
+  const body = await response.json();
+  const verified = verifyActivationToken(body.token, publicKey, fingerprint);
+  if (!response.ok || !verified || verified.licenseType !== "trial" || verified.nonce !== nonce) throw new Error(body.error || "Trial requires an internet connection");
+  return verified;
 }
