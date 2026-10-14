@@ -1,6 +1,16 @@
 import type { AudiometryReportProfile, EarProfile } from './audiometry-analysis.ts';
 
 export const audiometryTerminology = { SNHL: 'SNHL', CHL: 'CHL', MIXED: 'mixed hearing loss', UNKNOWN: 'hearing loss', NORMAL: 'normal hearing' };
+export function composeSdsReport(right?: string, left?: string, label = 'SDS'): string {
+  const score = (value?: string) => value?.trim() && Number.isFinite(Number(value))
+    ? Number(value) >= 70 ? 'high' : 'poor'
+    : null;
+  const re = score(right);
+  const le = score(left);
+  if (!re && !le) return '';
+  if (re && le && re !== le) return `${label}: Show ${re} score in right ear and ${le} score in left ear.`;
+  return `${label}: Show ${re || le} score in ${re && le ? 'both ears' : re ? 'right ear' : 'left ear'}.`;
+}
 const degree = (s: string) => s.toLowerCase().replaceAll('_', ' ');
 const frequencyText = (fs: number[]) => fs.every(f => f >= 1000) ? `${fs.map(f => f / 1000).join(fs.length === 2 && fs[0] === 3000 && fs[1] === 4000 ? '–' : ' and ')} kHz` : fs.map(f => f >= 1000 ? `${f / 1000} kHz` : `${f} Hz`).join(' and ');
 const regions = { BROAD: '', LOW_FREQUENCY: 'at low frequencies', MID_FREQUENCY: 'at mid frequencies', HIGH_FREQUENCY: 'at high frequencies', MID_TO_HIGH: 'at mid to high frequencies', LOW_TO_MID: 'at low to mid frequencies', ISOLATED_FREQUENCY: '', UNKNOWN: '' };

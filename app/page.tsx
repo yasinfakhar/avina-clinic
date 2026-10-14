@@ -57,6 +57,10 @@ function HeaderClock() {
   );
 }
 type TympanometryPoint = { pressure: number; compliance: number };
+const tympanometryMeasurement = (
+  value: Tympanometry | undefined,
+  field: "staticCompliance" | "middleEarPressure" | "gradient",
+) => value?.type === "B" ? "—" : value?.[field] || "";
 type ReflexValues = { hz500: string; hz1k: string; hz2k: string; hz4k: string };
 type Tympanometry = {
   canalVolume: string;
@@ -1896,6 +1900,9 @@ function Wizard({
         ...emptyTympanometry(),
         ...record[side].tympanometry,
         ...patch,
+        ...((patch.type ?? record[side].tympanometry?.type) === "B"
+          ? { staticCompliance: "", middleEarPressure: "", gradient: "", points: [] }
+          : {}),
       },
     });
   const updateAudiometry = (side: "right" | "left", value: Audiometry) =>
@@ -2363,6 +2370,8 @@ function Wizard({
                       <AudiometrySuggestion
                         right={record.right.audiometry}
                         left={record.left.audiometry}
+                        rightSpeech={record.right.speechAudiometry}
+                        leftSpeech={record.left.speechAudiometry}
                         onApply={(text) => setRecord({
                           ...record,
                           audiometricTests: {
@@ -2466,11 +2475,11 @@ function Wizard({
                         <strong>گوش {side === "right" ? "راست" : "چپ"}</strong>
                         <span>TYPE: {t?.type || "—"}</span>
                         <span>CANAL VOL: {t?.canalVolume || "—"} cc</span>
-                        <span>STAT.COMP: {t?.staticCompliance || "—"} ml</span>
+                        <span>STAT.COMP: {tympanometryMeasurement(t, "staticCompliance") || "—"} ml</span>
                         <span>
-                          M.E.PRESS: {t?.middleEarPressure || "—"} daPa
+                          M.E.PRESS: {tympanometryMeasurement(t, "middleEarPressure") || "—"} daPa
                         </span>
-                        <span>Gradient: {t?.gradient || "—"} %</span>
+                        <span>Gradient: {tympanometryMeasurement(t, "gradient") || "—"} %</span>
                       </article>
                     );
                   })}
@@ -2715,7 +2724,7 @@ function PrintSpeechAudiometryTable({ value }: { value: SpeechAudiometry }) {
           <th>Condition</th>
           <th>SRT <small>dB HL</small></th>
           <th>MCL <small>dB HL</small></th>
-          <th>UCL</th>
+          <th>SDS</th>
         </tr>
       </thead>
       <tbody>
@@ -2970,6 +2979,7 @@ function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; he
                   contra: { ...emptyReflex(), ...saved?.contra },
                 };
                 const showChart =
+                  value.type === "B" ||
                   value.points.length > 0 ||
                   (hasText(value.middleEarPressure) &&
                     hasText(value.staticCompliance));
@@ -2981,14 +2991,14 @@ function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; he
                     <div className="print-tymp-fields">
                       <ReportFields
                         fields={[
-                          ["Stat. Comp.", value.staticCompliance, "ml"],
+                          ["Stat. Comp.", tympanometryMeasurement(value, "staticCompliance"), "ml"],
                           [
                             "M.E. Press.",
-                            value.middleEarPressure,
+                            tympanometryMeasurement(value, "middleEarPressure"),
                             "daPa",
                           ],
                           ["Canal Vol.", value.canalVolume, "cc"],
-                          ["Gradient", value.gradient, "%"],
+                          ["Gradient", tympanometryMeasurement(value, "gradient"), "%"],
                           ["Type", value.type],
                         ]}
                       />
@@ -3203,19 +3213,19 @@ function RecordSummary({ record }: { record: RecordItem }) {
                   <div>
                     <dt>Stat. Comp.</dt>
                     <dd>
-                      {valueOrDash(tymp.staticCompliance)} <small>ml</small>
+                      {valueOrDash(tympanometryMeasurement(tymp, "staticCompliance"))} <small>ml</small>
                     </dd>
                   </div>
                   <div>
                     <dt>M.E. Press.</dt>
                     <dd>
-                      {valueOrDash(tymp.middleEarPressure)} <small>daPa</small>
+                      {valueOrDash(tympanometryMeasurement(tymp, "middleEarPressure"))} <small>daPa</small>
                     </dd>
                   </div>
                   <div>
                     <dt>Gradient</dt>
                     <dd>
-                      {valueOrDash(tymp.gradient)} <small>%</small>
+                      {valueOrDash(tympanometryMeasurement(tymp, "gradient"))} <small>%</small>
                     </dd>
                   </div>
                 </dl>
@@ -3348,10 +3358,10 @@ function RecordSummary({ record }: { record: RecordItem }) {
                     [
                       ["SRT (In Quiet)", speech.srt, "dB HL"],
                       ["MCL (In Quiet)", speech.mcl, "dB HL"],
-                      ["UCL (In Quiet)", speech.ucl, "%"],
+                      ["SDS (In Quiet)", speech.ucl, "%"],
                       ["SRT (In Noise)", speech.srtNoise, "dB HL"],
                       ["MCL (In Noise)", speech.mclNoise, "dB HL"],
-                      ["UCL (In Noise)", speech.uclNoise, "%"],
+                      ["SDS (In Noise)", speech.uclNoise, "%"],
                     ] as const
                   ).map(([label, value, unit]) => (
                     <div key={label}>
@@ -3439,7 +3449,7 @@ function AudiometrySummaryChart({
   print?: boolean;
 }) {
   const plot = { left: 85, right: 790, top: 34, bottom: 424 };
-  const verticalScale = print ? 2.5 : 1;
+  const verticalScale = print ? 1.8 : 1;
   const yTicks = Array.from({ length: 14 }, (_, index) => -10 + index * 10);
   const x = (index: number) =>
     plot.left +
@@ -3605,7 +3615,9 @@ function TympanometrySummaryChart({
         };
       }).filter((point) => point.pressure >= -600 && point.pressure <= 300)
     : [];
-  const chartPoints = value.points.length > 1 ? value.points : automaticPoints;
+  const chartPoints = value.type === "B"
+    ? [{ pressure: -300, compliance: 0 }, { pressure: 200, compliance: 0 }]
+    : value.points.length > 1 ? value.points : automaticPoints;
   return (
     <div className="tymp-chart summary-tymp-chart" dir="ltr">
       <svg
@@ -3664,7 +3676,7 @@ function TympanometrySummaryChart({
         {chartPoints.length > 1 && (
           <path className="drawn-curve" d={smoothPath(chartPoints)} />
         )}{" "}
-        {value.points.length < 2 && hasPeak && (
+        {value.type !== "B" && value.points.length < 2 && hasPeak && (
           <g className="peak-marker">
             <line
               x1={x(peakPressure)}
@@ -3695,6 +3707,7 @@ function TympanometryCard({
   value: Tympanometry;
   onChange: (patch: Partial<Tympanometry>) => void;
 }) {
+  const isTypeB = value.type === "B";
   const [drawMode, setDrawMode] = useState<"automatic" | "pencil">("automatic"),
     drawing = useRef(false),
     pointsRef = useRef(value.points);
@@ -3737,7 +3750,7 @@ function TympanometryCard({
     onChange({ points: pointsRef.current });
   };
   const pointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (drawMode !== "pencil") return;
+    if (isTypeB || drawMode !== "pencil") return;
     event.preventDefault();
     const point = eventPoint(event);
     if (!point) return;
@@ -3746,7 +3759,7 @@ function TympanometryCard({
     appendPoint(point);
   };
   const pointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (drawMode !== "pencil" || !drawing.current) return;
+    if (isTypeB || drawMode !== "pencil" || !drawing.current) return;
     event.preventDefault();
     const point = eventPoint(event);
     if (point) appendPoint(point);
@@ -3811,6 +3824,7 @@ function TympanometryCard({
             type="button"
             className={drawMode === "pencil" ? "selected" : ""}
             title="رسم دستی با مداد"
+            disabled={isTypeB}
             onClick={() => setDrawMode("pencil")}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3865,16 +3879,19 @@ function TympanometryCard({
           <text className="axis-label" x="580" y="283">
             daPa
           </text>
-          {drawMode === "pencil" && value.points.length > 1 && (
+          {isTypeB && (
+            <path className="drawn-curve automatic-curve" d={`M ${x(-300)} ${y(0)} L ${x(200)} ${y(0)}`} />
+          )}
+          {!isTypeB && drawMode === "pencil" && value.points.length > 1 && (
             <path className="drawn-curve" d={smoothPath(value.points)} />
           )}{" "}
-          {drawMode === "automatic" && automaticPoints.length > 1 && (
+          {!isTypeB && drawMode === "automatic" && automaticPoints.length > 1 && (
             <path
               className="drawn-curve automatic-curve"
               d={smoothPath(automaticPoints)}
             />
           )}{" "}
-          {drawMode === "automatic" && hasPeak && (
+          {!isTypeB && drawMode === "automatic" && hasPeak && (
             <g className="peak-marker">
               <line
                 x1={x(peakPressure)}
@@ -3896,7 +3913,9 @@ function TympanometryCard({
           )}
         </svg>
         <small>
-          {drawMode === "pencil"
+          {isTypeB
+            ? "در تایپ B فقط CANAL VOL را وارد کنید؛ سایر مقادیر خط تیره و نمودار خط صاف است."
+            : drawMode === "pencil"
             ? "برای رسم آزاد، مداد را روی نمودار بکشید."
             : hasPeak
               ? "منحنی خودکار در فاصله ۳۰۰ daPa از چپ و ۲۰۰ daPa از راست قله به محور می‌رسد."
@@ -3922,7 +3941,8 @@ function TympanometryCard({
           <input
             dir="ltr"
             inputMode="decimal"
-            value={value.staticCompliance}
+            value={tympanometryMeasurement(value, "staticCompliance")}
+            disabled={isTypeB}
             onChange={(e) => onChange({ staticCompliance: e.target.value })}
           />
         </label>
@@ -3933,7 +3953,8 @@ function TympanometryCard({
           <input
             dir="ltr"
             inputMode="decimal"
-            value={value.middleEarPressure}
+            value={tympanometryMeasurement(value, "middleEarPressure")}
+            disabled={isTypeB}
             onChange={(e) => onChange({ middleEarPressure: e.target.value })}
           />
         </label>
@@ -3944,7 +3965,8 @@ function TympanometryCard({
           <input
             dir="ltr"
             inputMode="decimal"
-            value={value.gradient}
+            value={tympanometryMeasurement(value, "gradient")}
+            disabled={isTypeB}
             onChange={(e) => onChange({ gradient: e.target.value })}
           />
         </label>
@@ -4358,12 +4380,12 @@ function SpeechAudiometryPanel({
               <div className="speech-audiometry-condition" key={condition}>
                 <h4>{condition}</h4>
                 {fields.map((field, index) => {
-                  const label = ["SRT", "MCL", "UCL"][index];
+                  const label = ["SRT", "MCL", "SDS"][index];
                   return (
                     <label key={field}>
                       <span>
                         {label}{" "}
-                        <small>{label === "UCL" ? "%" : "dB HL"}</small>
+                        <small>{label === "SDS" ? "%" : "dB HL"}</small>
                       </span>
                       <input
                         type="number"

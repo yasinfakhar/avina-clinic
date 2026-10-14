@@ -134,7 +134,18 @@ export function getDb() {
       "INSERT INTO otoscopy_results (value, created_at) VALUES (?, ?)",
     );
     insertResult.run("Normal TM", Date.now());
-    insertResult.run("O4", Date.now() + 1);
+  }
+
+  if (!database.prepare("SELECT 1 FROM app_migrations WHERE version = 2").get()) {
+    database.exec("BEGIN");
+    try {
+      database.prepare("DELETE FROM otoscopy_results WHERE value = ? COLLATE NOCASE").run("O4");
+      database.prepare("INSERT INTO app_migrations (version, applied_at) VALUES (2, ?)").run(Date.now());
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   databaseGlobal.audiologyDatabase = database;

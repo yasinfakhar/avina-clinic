@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeAudiometry, analyzeEar, classifyDegree } from '../app/audiometry-analysis.ts';
-import { composeAudiometryReport, composeEar, audiometryTerminology } from '../app/audiometry-report.ts';
+import { composeAudiometryReport, composeEar, composeSdsReport, audiometryTerminology } from '../app/audiometry-report.ts';
 import { audiometryConfig as config } from '../app/audiometry-config.mjs';
 const all = n => Object.fromEntries(config.frequencies.map(f => [f, n]));
 const ear = (changes = {}, bc) => {
@@ -11,6 +11,22 @@ const ear = (changes = {}, bc) => {
 };
 const profile = (changes, bc) => analyzeEar('right', ear(changes, bc));
 const high = {4000: 35, 6000: 50, 8000: 55};
+
+test('SDS omits absent and invalid scores', () => {
+  assert.equal(composeSdsReport('', '  '), '');
+  assert.equal(composeSdsReport(undefined, 'invalid'), '');
+});
+test('SDS includes 70 as high and combines matching categories', () => {
+  assert.equal(composeSdsReport('70', '95'), 'SDS: Show high score in both ears.');
+  assert.equal(composeSdsReport('0', '69'), 'SDS: Show poor score in both ears.');
+});
+test('SDS reports single ears and different categories', () => {
+  assert.equal(composeSdsReport('70'), 'SDS: Show high score in right ear.');
+  assert.equal(composeSdsReport('', '69'), 'SDS: Show poor score in left ear.');
+  assert.equal(composeSdsReport('70', '69'), 'SDS: Show high score in right ear and poor score in left ear.');
+  assert.equal(composeSdsReport('69', '70'), 'SDS: Show poor score in right ear and high score in left ear.');
+  assert.equal(composeSdsReport('', '70', 'SDS (In Noise)'), 'SDS (In Noise): Show high score in left ear.');
+});
 
 test('bilateral normal hearing has no flat-loss shape', () => {
   const p = analyzeAudiometry(ear(), ear());
