@@ -137,19 +137,20 @@ function serveUpdateFile(response, name) {
 }
 
 async function handleActivation(request, response) {
-  if (rateLimited(request, "activation")) return json(response, 429, { error: "Too many activation attempts" });
+  if (rateLimited(request, "activation")) return json(response, 429, { error: "تعداد تلاش‌های فعال‌سازی بیش از حد مجاز است. لطفاً یک دقیقه دیگر دوباره تلاش کنید." });
   const input = await body(request);
-  if (typeof input.licenseKey !== "string" || !validFingerprint(input.machineFingerprint)) return json(response, 400, { error: "Invalid activation request" });
+  if (typeof input.licenseKey !== "string" || !validFingerprint(input.machineFingerprint)) return json(response, 400, { error: "درخواست فعال‌سازی معتبر نیست." });
   if (input.licenseKey.trim() === trialKey) {
-    if (database.prepare("SELECT id FROM trials WHERE machine_fingerprint = ?").get(input.machineFingerprint)) return json(response, 403, { error: "Trial already used on this device. Please purchase a license." });
+    const existing = database.prepare("SELECT * FROM trials WHERE machine_fingerprint = ?").get(input.machineFingerprint);
+    if (existing) return trialResponse(response, existing, input.machineFingerprint);
     const now = Date.now();
     const trial = { id: id("trial"), started_at: now, expires_at: now + Math.round(trialHours * 3600000) };
     database.prepare("INSERT INTO trials (machine_fingerprint, id, started_at, expires_at) VALUES (?, ?, ?, ?)").run(input.machineFingerprint, trial.id, now, trial.expires_at);
     return trialResponse(response, trial, input.machineFingerprint);
   }
   const license = database.prepare("SELECT * FROM licenses WHERE key_hash = ?").get(sha256(input.licenseKey.trim())) ;
-  if (!license || license.status !== "active") return json(response, 403, { error: "License key is invalid or revoked" });
-  if (license.machine_fingerprint && license.machine_fingerprint !== input.machineFingerprint) return json(response, 409, { error: "License key is already activated on another computer" });
+  if (!license || license.status !== "active") return json(response, 403, { error: "کلید مجوز نامعتبر است یا لغو شده است." });
+  if (license.machine_fingerprint && license.machine_fingerprint !== input.machineFingerprint) return json(response, 409, { error: "این کلید مجوز قبلاً روی رایانه دیگری فعال شده است." });
   const deviceId = license.device_id || id("dev"); const now = Date.now();
   if (!license.machine_fingerprint) database.prepare("UPDATE licenses SET machine_fingerprint = ?, device_id = ?, activated_at = ?, updated_at = ? WHERE id = ?")
     .run(input.machineFingerprint, deviceId, now, now, license.id);
@@ -161,25 +162,25 @@ async function handleActivation(request, response) {
 
 function trialResponse(response, trial, fingerprint, nonce) {
   const now = Date.now();
-  if (trial.expires_at <= now) return json(response, 403, { error: "Trial expired. Please purchase a license." });
+  if (trial.expires_at <= now) return json(response, 403, { error: "مهلت استفاده آزمایشی به پایان رسیده است. لطفاً مجوز اصلی تهیه کنید." });
   return json(response, 200, { token: signedToken({ status: "active", licenseType: "trial", licenseId: trial.id, deviceId: trial.id, machineFingerprint: fingerprint, serverTime: now, expiresAt: trial.expires_at, exp: Math.ceil(trial.expires_at / 1000), nonce }) });
 }
 async function handleTrialCheck(request, response) {
   const input = await body(request);
   const activation = verifyToken(String(input.activationToken || ""));
-  if (!activation || activation.licenseType !== "trial" || activation.machineFingerprint !== input.machineFingerprint || !/^[a-f0-9]{48}$/.test(input.nonce || "")) return json(response, 403, { error: "Invalid trial verification" });
+  if (!activation || activation.licenseType !== "trial" || activation.machineFingerprint !== input.machineFingerprint || !/^[a-f0-9]{48}$/.test(input.nonce || "")) return json(response, 403, { error: "اطلاعات تأیید مجوز آزمایشی معتبر نیست." });
   const trial = database.prepare("SELECT * FROM trials WHERE machine_fingerprint = ? AND id = ?").get(input.machineFingerprint, activation.licenseId);
-  if (!trial) return json(response, 403, { error: "Trial not found" });
+  if (!trial) return json(response, 403, { error: "مجوز آزمایشی این دستگاه پیدا نشد." });
   return trialResponse(response, trial, input.machineFingerprint, input.nonce);
 }
 async function handleRecovery(request, response) {
-  if (rateLimited(request, "recovery", 6)) return json(response, 429, { error: "Too many recovery attempts" });
+  if (rateLimited(request, "recovery", 6)) return json(response, 429, { error: "تعداد تلاش‌های بازیابی بیش از حد مجاز است. لطفاً یک دقیقه دیگر دوباره تلاش کنید." });
   const input = await body(request); const activation = verifyToken(String(input.activationToken || ""));
-  if (!activation || activation.status !== "active" || activation.machineFingerprint !== input.machineFingerprint) return json(response, 403, { error: "Invalid activation" });
+  if (!activation || activation.status !== "active" || activation.machineFingerprint !== input.machineFingerprint) return json(response, 403, { error: "اطلاعات فعال‌سازی معتبر نیست." });
   const license = database.prepare("SELECT * FROM licenses WHERE id = ?").get(activation.licenseId);
-  if (!license || license.status !== "active" || license.machine_fingerprint !== input.machineFingerprint) return json(response, 403, { error: "License is not active" });
+  if (!license || license.status !== "active" || license.machine_fingerprint !== input.machineFingerprint) return json(response, 403, { error: "مجوز فعال نیست." });
   const recovery = database.prepare("SELECT * FROM recovery_codes WHERE code_hash = ? AND license_id = ?").get(sha256(String(input.code || "").trim()), license.id);
-  if (!recovery || recovery.used_at || recovery.expires_at <= Date.now()) return json(response, 400, { error: "Recovery code is invalid or expired" });
+  if (!recovery || recovery.used_at || recovery.expires_at <= Date.now()) return json(response, 400, { error: "کد بازیابی نامعتبر است یا مهلت آن تمام شده است." });
   database.prepare("UPDATE recovery_codes SET used_at = ? WHERE id = ?").run(Date.now(), recovery.id);
   const exp = Math.floor(Date.now() / 1000) + 5 * 60;
   return json(response, 200, { recoveryToken: signedToken({ purpose: "password-recovery", machineFingerprint: input.machineFingerprint, licenseId: license.id, exp }) });

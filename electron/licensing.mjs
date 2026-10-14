@@ -23,13 +23,19 @@ export function fingerprintFromIdentity({ platform, arch, machineId, systemUuid 
   return createHash("sha256").update(`audiology-desktop-v2|${raw}`).digest("hex");
 }
 
+let cachedMachineFingerprint;
+
 export function machineFingerprint() {
-  return fingerprintFromIdentity({
+  // Hardware identity is stable during a session. Repeated synchronous WMI
+  // and registry queries block Electron's main process during trial checks.
+  if (cachedMachineFingerprint) return cachedMachineFingerprint;
+  cachedMachineFingerprint = fingerprintFromIdentity({
     platform: process.platform,
     arch: process.arch,
     machineId: machineIdSync(true),
     systemUuid: windowsSystemUuid(),
   });
+  return cachedMachineFingerprint;
 }
 
 function decodePart(value) {
@@ -58,14 +64,23 @@ export function readActivation(file, publicKey, { allowTrial = false } = {}) {
   } catch { return null; }
 }
 
+async function licenseRequest(url, options) {
+  try {
+    const response = await fetch(url, options);
+    const body = await response.json();
+    return { response, body };
+  } catch {
+    throw new Error("ارتباط با سرویس مجوز برقرار نشد. اینترنت را وصل کنید و کلید مجوز را دوباره وارد کنید.");
+  }
+}
+
 export async function activateLicense({ licenseKey, serviceUrl, publicKey, licenseFile, appVersion }) {
   if (!/^https:\/\//i.test(serviceUrl)) throw new Error("نشانی سرویس مجوز باید HTTPS باشد.");
   const fingerprint = machineFingerprint();
-  const response = await fetch(`${serviceUrl.replace(/\/$/, "")}/v1/activations`, {
+  const { response, body } = await licenseRequest(`${serviceUrl.replace(/\/$/, "")}/v1/activations`, {
     signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ licenseKey, machineFingerprint: fingerprint, appVersion, platform: `${process.platform}-${process.arch}` }),
   });
-  const body = await response.json();
   if (!response.ok || !body.token || !verifyActivationToken(body.token, publicKey, fingerprint)) throw new Error(body.error || "فعال‌سازی مجوز ناموفق بود.");
   writeFileSync(licenseFile, JSON.stringify({ token: body.token, activatedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
   return verifyActivationToken(body.token, publicKey, fingerprint);
@@ -73,18 +88,17 @@ export async function activateLicense({ licenseKey, serviceUrl, publicKey, licen
 
 export async function checkTrial({ serviceUrl, publicKey, licenseFile }) {
   const stored = readActivation(licenseFile, publicKey, { allowTrial: true });
-  if (!stored) throw new Error("Invalid license");
+  if (!stored) throw new Error("مجوز معتبر نیست.");
   const fingerprint = machineFingerprint();
   const payload = verifyActivationToken(stored.token, publicKey, fingerprint);
   if (payload.licenseType !== "trial") return payload;
-  if (!serviceUrl.toLowerCase().startsWith("https://")) throw new Error("HTTPS required");
+  if (!serviceUrl.toLowerCase().startsWith("https://")) throw new Error("نشانی سرویس مجوز باید HTTPS باشد.");
   const nonce = randomBytes(24).toString("hex");
-  const response = await fetch(serviceUrl.replace(/\/$/, "") + "/v1/trials/check", {
+  const { response, body } = await licenseRequest(serviceUrl.replace(/\/$/, "") + "/v1/trials/check", {
     signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ activationToken: stored.token, machineFingerprint: fingerprint, nonce }),
   });
-  const body = await response.json();
   const verified = verifyActivationToken(body.token, publicKey, fingerprint);
-  if (!response.ok || !verified || verified.licenseType !== "trial" || verified.nonce !== nonce) throw new Error(body.error || "Trial requires an internet connection");
+  if (!response.ok || !verified || verified.licenseType !== "trial" || verified.nonce !== nonce) throw new Error(body.error || "برای ادامه استفاده آزمایشی، اینترنت را وصل کنید و کلید آزمایشی را دوباره وارد کنید.");
   return verified;
 }

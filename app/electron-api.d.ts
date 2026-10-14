@@ -7,7 +7,7 @@ declare global {
       createBackup(): Promise<{ canceled: boolean; backup?: { path: string } }>;
       restoreBackup(): Promise<{ canceled: boolean; restored?: boolean }>;
       appVersion(): Promise<string>;
-      licenseStatus(): Promise<{ active: boolean; licenseId?: string; deviceId?: string; fingerprint: string }>;
+      licenseStatus(): Promise<{ active: boolean; licenseId?: string; deviceId?: string; fingerprint: string; licenseType?: "trial" | "paid"; expiresAt?: number; error?: string }>;
       checkForUpdates(): Promise<void>;
       releaseNotes(): Promise<{ version: string; changelog: string; update_date: string; url: string } | null>;
       acknowledgeRelease(version: string): Promise<boolean>;

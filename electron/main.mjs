@@ -172,14 +172,14 @@ async function enforceTrial() {
 }
 async function lockTrial() {
   clearTimeout(trialTimer); clearTimeout(trialExpiryTimer); trialAccess = false;
-  trialLockReason ||= "Trial expired. Please purchase a license.";
+  trialLockReason ||= "مهلت استفاده آزمایشی به پایان رسیده است. لطفاً مجوز اصلی تهیه کنید.";
   // Navigate the existing window first to keep window-all-closed from quitting the app.
   if (appWindow && !appWindow.isDestroyed()) await appWindow.loadFile(path.join(electronDirectory, "activation.html"));
   await stopServer();
 }
 async function createApplicationWindow() {
   await startServer();
-  appWindow = new BrowserWindow({ width: 1440, height: 940, minWidth: 1024, minHeight: 700, show: false, backgroundColor: "#f5f7fb", webPreferences: secureWindowOptions() });
+  appWindow = new BrowserWindow({ width: 1440, height: 940, minWidth: 1024, minHeight: 700, show: false, backgroundColor: "#f5f7fb", webPreferences: { ...secureWindowOptions(), backgroundThrottling: false } });
   lockWindow(appWindow); appWindow.once("ready-to-show", () => { log("Application window ready"); appWindow.show(); }); await appWindow.loadURL(localOrigin);
 }
 
@@ -261,9 +261,9 @@ async function generateReport(recordId) {
 
 ipcMain.handle("app:version", () => app.getVersion());
 ipcMain.handle("license:status", () => {
-  const stored = readActivation(licenseFile, licensePublicKey);
+  const stored = readActivation(licenseFile, licensePublicKey, { allowTrial: trialAccess });
   const payload = stored ? JSON.parse(Buffer.from(stored.token.split(".")[1], "base64url").toString("utf8")) : null;
-  return payload ? { active: true, licenseId: payload.licenseId, deviceId: payload.deviceId, fingerprint: machineFingerprint() } : { active: false, fingerprint: machineFingerprint(), error: trialLockReason };
+  return payload ? { active: true, licenseId: payload.licenseId, deviceId: payload.deviceId, fingerprint: machineFingerprint(), licenseType: payload.licenseType === "trial" ? "trial" : "paid", ...(payload.licenseType === "trial" ? { expiresAt: payload.expiresAt } : {}) } : { active: false, fingerprint: machineFingerprint(), error: trialLockReason };
 });
 ipcMain.handle("license:fingerprint", () => machineFingerprint());
 ipcMain.handle("license:activate", async (_event, licenseKey) => {

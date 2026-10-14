@@ -6,5 +6,5 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault(); status.textContent = "در حال فعال‌سازی…";
   const button = form.querySelector("button"); button.disabled = true;
   try { await window.activation.activate(document.querySelector("#license-key").value.trim()); status.textContent = "فعال‌سازی انجام شد. برنامه در حال اجرا است…"; }
-  catch (error) { status.textContent = error.message || "فعال‌سازی ناموفق بود."; button.disabled = false; }
+  catch (error) { status.textContent = error.message?.replace(/^Error invoking remote method [^:]+:\s*(?:Error:\s*)?/, "") || "فعال‌سازی ناموفق بود."; button.disabled = false; }
 });

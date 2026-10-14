@@ -13,10 +13,12 @@ import { AudiometrySuggestion } from "./components/AudiometrySuggestion";
 import { TympanometrySuggestion } from "./components/TympanometrySuggestion";
 import { BirthDatePicker } from "./components/BirthDatePicker";
 import { jalaliDateTimeToIso } from "./jalali-date";
+import { nextReminderDelay } from "./reminder-timing";
 import { AutocompleteInput } from "./components/AutocompleteInput";
 import { ImageAnnotator } from "./components/ImageAnnotator";
 import { SmsSettings } from "./components/SmsSettings";
 import { BackupMenu } from "./components/BackupMenu";
+import { TrialBadge } from "./components/TrialBadge";
 import { dataUrlToBlob } from "./image-data";
 import { toEnglishDigits } from "./digits";
 import { sanitizeEnglishName, sanitizePersianName } from "./name-input";
@@ -817,21 +819,24 @@ export default function Home() {
       .catch(() => setToast("خواندن یادداشت‌ها و یادآوری‌ها ناموفق بود"));
     const initialTick = window.setTimeout(() => setClock(Date.now()), 0);
     const interval = window.setInterval(() => setClock(Date.now()), 30_000);
-    return () => { window.clearTimeout(initialTick); window.clearInterval(interval); };
+    const refreshClock = () => setClock(Date.now());
+    window.addEventListener("focus", refreshClock);
+    document.addEventListener("visibilitychange", refreshClock);
+    return () => {
+      window.clearTimeout(initialTick); window.clearInterval(interval);
+      window.removeEventListener("focus", refreshClock);
+      document.removeEventListener("visibilitychange", refreshClock);
+    };
   }, [loggedIn, authMode]);
 
   useEffect(() => {
     if (!loggedIn || authMode !== "app") return;
     const now = Date.now();
-    const nextReminder = patientNotes
-      .flatMap((item) => item.reminders)
-      .filter((item) => !item.read && Date.parse(item.remindAt) > now)
-      .sort((a, b) => Date.parse(a.remindAt) - Date.parse(b.remindAt))[0];
-    if (!nextReminder) return;
-    const delay = Math.min(Date.parse(nextReminder.remindAt) - now, 2_147_000_000);
+    const delay = nextReminderDelay(patientNotes.flatMap((item) => item.reminders), now);
+    if (delay === null) return;
     const timer = window.setTimeout(() => setClock(Date.now()), delay);
     return () => window.clearTimeout(timer);
-  }, [patientNotes, loggedIn, authMode]);
+  }, [patientNotes, loggedIn, authMode, clock]);
 
   useEffect(() => {
     if (!loggedIn || authMode !== "app") return;
@@ -1010,8 +1015,11 @@ export default function Home() {
     finally { setSavingNote(false); }
   };
   const markNotificationRead = async (reminderId: string) => {
-    setPatientNotes((previous) => previous.map((item) => ({ ...item, reminders: item.reminders.map((reminder) => reminder.id === reminderId ? { ...reminder, read: true } : reminder) })));
-    await fetch("/api/patient-notes", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reminderId }) }).catch(() => {});
+    try {
+      const response = await fetch("/api/patient-notes", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reminderId }) });
+      if (!response.ok) throw new Error();
+      setPatientNotes((previous) => previous.map((item) => ({ ...item, reminders: item.reminders.map((reminder) => reminder.id === reminderId ? { ...reminder, read: true } : reminder) })));
+    } catch { notify("ثبت خوانده‌شدن یادآوری ناموفق بود؛ دوباره تلاش کنید"); }
   };
   const saveOtoscopyResult = (rawValue: string) => {
     const value = rawValue.trim();
@@ -1282,6 +1290,7 @@ export default function Home() {
         </div>
         <div className="header-clock-area">
           <HeaderClock />
+          <TrialBadge />
           {activeReminder && <aside className="header-reminder-alert" role="status" aria-live="assertive">
             <button type="button" className="header-reminder-main" onClick={() => { void markNotificationRead(activeReminder.id); if (activeReminderPatient) openNote(activeReminderPatient); }}>
               <span className="header-reminder-icon"><Icon name="bell" /></span>

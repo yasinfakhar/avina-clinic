@@ -41,11 +41,16 @@ export async function POST(request: Request) {
   const now = Date.now();
   database.exec("BEGIN");
   try {
+    const previousReminders = database.prepare("SELECT id, record_id, reminder_text, remind_at, reminder_read FROM patient_reminders WHERE record_id = ?").all(body.recordId) as ReminderRow[];
     database.prepare(`INSERT INTO patient_notes (record_id, note, reminder_text, remind_at, reminder_read, updated_at)
       VALUES (?, ?, '', NULL, 0, ?) ON CONFLICT(record_id) DO UPDATE SET note = excluded.note, updated_at = excluded.updated_at`).run(body.recordId, (body.note || "").trim(), now);
     database.prepare("DELETE FROM patient_reminders WHERE record_id = ?").run(body.recordId);
-    const insert = database.prepare(`INSERT INTO patient_reminders (id, record_id, reminder_text, remind_at, reminder_read, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)`);
-    for (const item of reminders) insert.run(item.id, body.recordId, item.text, item.remindAt, now, now);
+    const insert = database.prepare(`INSERT INTO patient_reminders (id, record_id, reminder_text, remind_at, reminder_read, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    for (const item of reminders) {
+      const previous = previousReminders.find((saved) => saved.id === item.id);
+      const read = previous && previous.reminder_text === item.text && previous.remind_at === item.remindAt ? previous.reminder_read : 0;
+      insert.run(item.id, body.recordId, item.text, item.remindAt, read, now, now);
+    }
     database.exec("COMMIT");
   } catch (error) { database.exec("ROLLBACK"); throw error; }
   return Response.json({ note: allNotes().find((item) => item.recordId === body.recordId) });

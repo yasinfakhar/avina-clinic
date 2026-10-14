@@ -9,7 +9,8 @@ const PERSIAN_MONTHS = [
 ];
 const WEEKDAYS = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
 
-const fa = (n: number) => n.toLocaleString("fa-IR");
+const fa = (n: number) => n.toLocaleString("fa-IR", { useGrouping: false });
+const MIN_YEAR = 1300;
 
 type BirthDatePickerProps = {
   value: string;
@@ -48,6 +49,7 @@ export function BirthDatePicker({
   }, [open]);
 
   const monthLength = jalaaliMonthLength(view.jy, view.jm);
+  const maxYear = todayJalali().jy + 19;
   const offset = weekdayOffset(view.jy, view.jm);
   const days = Array.from({ length: offset + monthLength }, (_, i) => (i < offset ? 0 : i - offset + 1));
 
@@ -117,7 +119,7 @@ export function BirthDatePicker({
                 onChange={(e) => setYear(Number(e.target.value))}
                 className="birth-datepicker-year-select"
               >
-                {Array.from({ length: 100 }, (_, i) => todayJalali().jy - 80 + i).map((year) => (
+                {Array.from({ length: maxYear - MIN_YEAR + 1 }, (_, i) => MIN_YEAR + i).map((year) => (
                   <option key={year} value={year}>{fa(year)}</option>
                 ))}
               </select>

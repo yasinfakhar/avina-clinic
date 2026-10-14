@@ -1,0 +1,20 @@
+.badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 10px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #e9cd87;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #755310;
+  font-size: 11px;
+  line-height: 1.8;
+  text-align: center;
+}
+
+.badge strong { white-space: nowrap; }
+
+@media print { .badge { display: none; } }

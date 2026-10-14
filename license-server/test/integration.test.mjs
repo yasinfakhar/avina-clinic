@@ -79,7 +79,11 @@ test("trial is persistent, uses server time, expires, and permits paid upgrade",
   const payload = JSON.parse(Buffer.from(first.body.token.split(".")[1], "base64url"));
   assert.equal(payload.licenseType, "trial");
   assert.ok(Math.abs(payload.expiresAt - payload.serverTime - 3 * 3600000) < 1000);
-  assert.equal((await post("/v1/activations", input)).response.status, 403);
+  const resumed = await post("/v1/activations", input);
+  assert.equal(resumed.response.status, 200);
+  const resumedPayload = JSON.parse(Buffer.from(resumed.body.token.split(".")[1], "base64url"));
+  assert.equal(resumedPayload.expiresAt, payload.expiresAt);
+  assert.equal(resumedPayload.licenseId, payload.licenseId);
   const checkInput = { activationToken: first.body.token, machineFingerprint, nonce: "d".repeat(48) };
   const checked = await post("/v1/trials/check", checkInput);
   assert.equal(checked.response.status, 200);
@@ -87,8 +91,12 @@ test("trial is persistent, uses server time, expires, and permits paid upgrade",
   assert.equal((await post("/v1/trials/check", { ...checkInput, machineFingerprint: "e".repeat(64) })).response.status, 403);
   const db = new DatabaseSync(path.join(directory, "licenses.sqlite"));
   db.prepare("UPDATE trials SET expires_at = ? WHERE machine_fingerprint = ?").run(Date.now() - 1000, machineFingerprint); db.close();
-  assert.equal((await post("/v1/trials/check", checkInput)).response.status, 403);
-  assert.equal((await post("/v1/activations", input)).response.status, 403);
+  const expiredCheck = await post("/v1/trials/check", checkInput);
+  assert.equal(expiredCheck.response.status, 403);
+  assert.match(expiredCheck.body.error, /مهلت استفاده آزمایشی/);
+  const expiredActivation = await post("/v1/activations", input);
+  assert.equal(expiredActivation.response.status, 403);
+  assert.match(expiredActivation.body.error, /مهلت استفاده آزمایشی/);
   const paid = await api("/admin/licenses", { method: "POST", headers: adminHeaders, body: "{}" });
   const upgrade = await post("/v1/activations", { ...input, licenseKey: paid.body.licenseKey });
   assert.equal(upgrade.response.status, 200);
@@ -96,7 +104,9 @@ test("trial is persistent, uses server time, expires, and permits paid upgrade",
 });
 
 test.after(async () => {
-  child.kill("SIGTERM");
-  await new Promise((resolve) => child.once("exit", resolve));
+  if (child.exitCode === null) {
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill("SIGTERM"); await exited;
+  }
   rmSync(directory, { recursive: true, force: true });
 });

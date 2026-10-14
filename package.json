@@ -3,13 +3,15 @@
   "productName": "Avina Audiology",
   "description": "Offline desktop management system for an audiology clinic",
   "author": "Avina Audiology",
-  "version": "1.1.10",
+  "version": "1.1.14",
   "private": true,
   "main": "electron/main.mjs",
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
+    "build:win7": "node --env-file-if-exists=.env.desktop scripts/build-windows7.mjs",
+    "build:win7:dir": "node --env-file-if-exists=.env.desktop scripts/build-windows7.mjs --dir",
     "install:ci": "bash scripts/install-ci.sh",
     "dev": "next dev -p 5173",
     "desktop:dev": "electron .",
@@ -61,6 +63,7 @@
     "appId": "ir.avina.audiology",
     "productName": "Avina Audiology",
     "asar": true,
+    "electronDist": "node_modules/electron/dist",
     "files": [
       "electron/**/*",
       "package.json"
