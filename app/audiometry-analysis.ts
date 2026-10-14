@@ -329,7 +329,7 @@ export function analyzeEar(ear: 'right' | 'left', input?: AudiometryInput, confi
       : low !== null && high !== null && high - low >= config.shapeDifferenceDb ? 'SLOPING'
       : low !== null && high !== null && low - high >= config.shapeDifferenceDb ? 'RISING' : 'IRREGULAR';
   }
-  if (type === 'UNKNOWN' || configuration === 'IRREGULAR' || warnings.has('INSUFFICIENT_DATA') || (warnings.has('NO_RESPONSE_PRESENT') && type === 'UNKNOWN') || warnings.has('INVALID_THRESHOLD') || warnings.has('CONFLICTING_THRESHOLDS')) warnings.add('REVIEW_REQUIRED');
+  if (type === 'UNKNOWN' || configuration === 'IRREGULAR' || warnings.has('INSUFFICIENT_DATA') || warnings.has('INVALID_THRESHOLD') || warnings.has('CONFLICTING_THRESHOLDS')) warnings.add('REVIEW_REQUIRED');
   const pta = (frequencies: number[]) => {
     const values = frequencies.map(acAt);
     return values.every(v => v !== null) ? mean(values as number[]) : null;
