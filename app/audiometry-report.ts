@@ -37,6 +37,6 @@ export function composeEar(p: EarProfile, terminology = audiometryTerminology): 
 
 export function composeAudiometryReport(p: AudiometryReportProfile, terminology = audiometryTerminology): string {
   const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
-  if (p.bilateralEligible) return `Bilateral ${p.rightEar.type === 'NORMAL' ? '' : 'symmetrical '}${composeEar(p.rightEar, terminology)}`;
+  if (p.bilateralEligible) return `Bilateral ${composeEar(p.rightEar, terminology)}`;
   return `RE: ${capitalize(composeEar(p.rightEar, terminology))}\nLE: ${capitalize(composeEar(p.leftEar, terminology))}`;
 }

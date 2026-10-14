@@ -45,6 +45,7 @@ within 10 dB counts as symmetrical (10 dB is inclusive). Otherwise at least two
 larger differences establish asymmetry, with direction if consistent. Combined
 reporting additionally requires matching type, degrees, shape, region, isolated
 frequencies, notch, gap findings and warnings. Differing ears retain RE/LE lines.
+Combined reports use “Bilateral” without adding “symmetrical”.
 
 ## Codebase assumptions and specification conflicts
 
@@ -69,7 +70,7 @@ frequencies, notch, gap findings and warnings. Differing ears retain RE/LE lines
 ## Representative comments
 
 - Bilateral normal hearing.
-- Bilateral symmetrical mild flat SNHL.
+- Bilateral mild flat SNHL.
 - mild to severe sloping SNHL.
 - mild to moderate SNHL at high frequencies.
 - mild to moderate SNHL at 3–4 kHz.

@@ -4,6 +4,7 @@ import React, {
   startTransition,
   useEffect,
   useEffectEvent,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -3493,7 +3494,7 @@ function AudiometrySummaryChart({
   return (
     <div className={`audiogram summary-audiogram ${side}`} dir="ltr">
       <svg
-        viewBox={`0 0 910 ${465 * verticalScale}`}
+        viewBox={`${print ? -20 : 0} 0 ${print ? 875 : 910} ${465 * verticalScale}`}
         role="img"
         aria-label={`نمودار ادیومتری گوش ${side === "right" ? "راست" : "چپ"}`}
       >
@@ -3573,6 +3574,7 @@ function TympanometrySummaryChart({
   side: "right" | "left";
   value: Tympanometry;
 }) {
+  const clipId = useId();
   const xTicks = Array.from({ length: 10 }, (_, i) => -600 + i * 100),
     yTicks = Array.from({ length: 8 }, (_, i) => 3.5 - i * 0.5);
   const plot = { left: 54, right: 574, top: 18, bottom: 248 };
@@ -3601,7 +3603,7 @@ function TympanometrySummaryChart({
       peakPressure >= -600 &&
       peakPressure <= 300 &&
       peakCompliance >= 0 &&
-      peakCompliance <= 3.5;
+      Number.isFinite(peakCompliance);
   const automaticPoints = hasPeak
     ? Array.from({ length: 51 }, (_, i) => {
         const offset = -300 + i * 10,
@@ -3625,6 +3627,11 @@ function TympanometrySummaryChart({
         role="img"
         aria-label={`نمودار تمپانومتری گوش ${side === "right" ? "راست" : "چپ"}`}
       >
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={plot.left} y={plot.top} width={plot.right - plot.left} height={plot.bottom - plot.top} />
+          </clipPath>
+        </defs>
         <rect
           className="tympanometry-grid-border"
           x={plot.left}
@@ -3673,6 +3680,7 @@ function TympanometrySummaryChart({
         <text className="axis-label" x="580" y="283">
           daPa
         </text>
+        <g clipPath={`url(#${clipId})`}>
         {chartPoints.length > 1 && (
           <path className="drawn-curve" d={smoothPath(chartPoints)} />
         )}{" "}
@@ -3693,6 +3701,7 @@ function TympanometrySummaryChart({
             <circle cx={x(peakPressure)} cy={y(peakCompliance)} r="7" />
           </g>
         )}
+        </g>
       </svg>
     </div>
   );
@@ -3707,6 +3716,7 @@ function TympanometryCard({
   value: Tympanometry;
   onChange: (patch: Partial<Tympanometry>) => void;
 }) {
+  const clipId = useId();
   const isTypeB = value.type === "B";
   const [drawMode, setDrawMode] = useState<"automatic" | "pencil">("automatic"),
     drawing = useRef(false),
@@ -3785,7 +3795,7 @@ function TympanometryCard({
       peakPressure >= -600 &&
       peakPressure <= 300 &&
       peakCompliance >= 0 &&
-      peakCompliance <= 3.5;
+      Number.isFinite(peakCompliance);
   const updateReflex = (
     row: "ipsi" | "contra",
     frequency: keyof ReflexValues,
@@ -3857,6 +3867,11 @@ function TympanometryCard({
           onPointerUp={() => (drawing.current = false)}
           onPointerCancel={() => (drawing.current = false)}
         >
+          <defs>
+            <clipPath id={clipId}>
+              <rect x={plot.left} y={plot.top} width={plot.right - plot.left} height={plot.bottom - plot.top} />
+            </clipPath>
+          </defs>
           {yTicks.map((v) => (
             <g key={v}>
               <line x1={plot.left} x2={plot.right} y1={y(v)} y2={y(v)} />
@@ -3879,6 +3894,7 @@ function TympanometryCard({
           <text className="axis-label" x="580" y="283">
             daPa
           </text>
+          <g clipPath={`url(#${clipId})`}>
           {isTypeB && (
             <path className="drawn-curve automatic-curve" d={`M ${x(-300)} ${y(0)} L ${x(200)} ${y(0)}`} />
           )}
@@ -3911,6 +3927,7 @@ function TympanometryCard({
               </text>
             </g>
           )}
+          </g>
         </svg>
         <small>
           {isTypeB

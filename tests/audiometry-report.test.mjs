@@ -33,10 +33,10 @@ test('bilateral normal hearing has no flat-loss shape', () => {
   assert.equal(p.rightEar.type, 'NORMAL'); assert.equal(p.rightEar.configuration, 'NONE');
   assert.equal(composeAudiometryReport(p), 'Bilateral normal hearing.');
 });
-test('bilateral symmetrical SNHL combines degree and shape', () => {
+test('bilateral SNHL combines degree and shape without symmetry wording', () => {
   const p = analyzeAudiometry(ear(all(30)), ear(all(35)));
   assert.equal(p.symmetry, 'SYMMETRICAL'); assert.equal(p.bilateralEligible, true);
-  assert.equal(composeAudiometryReport(p), 'Bilateral symmetrical mild flat SNHL.');
+  assert.equal(composeAudiometryReport(p), 'Bilateral mild flat SNHL.');
 });
 for (const [name, values, shape] of [
   ['mild to severe slope', {125:35,250:35,500:40,1000:45,2000:50,3000:55,4000:60,6000:65,8000:75}, 'SLOPING'],
