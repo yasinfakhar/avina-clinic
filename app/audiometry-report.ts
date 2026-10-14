@@ -1,6 +1,6 @@
 import type { AudiometryReportProfile, EarProfile } from './audiometry-analysis.ts';
 
-export const audiometryTerminology = { SNHL: 'SNHL', CHL: 'CHL', MIXED: 'mixed hearing loss', UNKNOWN: 'hearing loss', NORMAL: 'normal hearing' };
+export const audiometryTerminology = { SNHL: 'SNHL', CHL: 'CHL', MIXED: 'MHL', UNKNOWN: 'hearing loss', NORMAL: 'normal hearing' };
 export function composeSdsReport(right?: string, left?: string, label = 'SDS'): string {
   const score = (value?: string) => value?.trim() && Number.isFinite(Number(value))
     ? Number(value) >= 70 ? 'high' : 'poor'
@@ -16,21 +16,41 @@ const frequencyText = (fs: number[]) => fs.every(f => f >= 1000) ? `${fs.map(f =
 const regions = { BROAD: '', LOW_FREQUENCY: 'at low frequencies', MID_FREQUENCY: 'at mid frequencies', HIGH_FREQUENCY: 'at high frequencies', MID_TO_HIGH: 'at mid to high frequencies', LOW_TO_MID: 'at low to mid frequencies', ISOLATED_FREQUENCY: '', UNKNOWN: '' };
 
 export function composeEar(p: EarProfile, terminology = audiometryTerminology): string {
+  if (p.deafness) return 'deafness.';
   if (p.status === 'UNKNOWN') return 'Insufficient thresholds for interpretation; review required.';
   if (p.status === 'NORMAL') return `normal hearing${p.warnings.includes('PARTIAL_AC') ? '; available tested frequencies only' : ''}.`;
   const range = p.degreeFrom === p.degreeTo ? degree(p.degreeFrom) : `${degree(p.degreeFrom)} to ${degree(p.degreeTo)}`;
-  const shape = !p.isolatedFrequencies.length && p.frequencyRegion === 'BROAD' && !['NONE', 'UNKNOWN', 'NOTCHED', 'IRREGULAR'].includes(p.configuration) ? `${degree(p.configuration).replace('cookie bite', 'cookie-bite')} ` : '';
-  const location = p.isolatedFrequencies.length ? `at ${frequencyText(p.isolatedFrequencies)}` : regions[p.frequencyRegion] || (p.frequencyRegion === 'UNKNOWN' ? `at ${frequencyText(p.exactAffectedFrequencies)}` : '');
+  const shape = !p.isolatedFrequencies.length && p.frequencyRegion === 'BROAD' && !['NONE', 'UNKNOWN', 'NOTCHED', 'IRREGULAR', 'FLAT', 'STEEPLY_SLOPING'].includes(p.configuration) ? `${degree(p.configuration).replace('cookie bite', 'cookie-bite')} ` : '';
+  // Clinic wording:
+  // - CHL/MHL comments are kept concise without a frequency-region suffix.
+  // - An isolated high-frequency SNHL with a localized low-frequency ABG is
+  //   worded as "at high frequency with gap at low frequency" rather than
+  //   exposing the exact 8-kHz point.
+  const suppressLocationForConductiveType = p.type === 'CHL' || p.type === 'MIXED';
+  const isolatedHighWithLowGap = p.type === 'SNHL'
+    && p.isolatedFrequencies.length === 1
+    && p.isolatedFrequencies[0] >= 6000
+    && p.residualAirBoneGap
+    && p.airBoneGapFrequencies.length > 0
+    && p.airBoneGapFrequencies.every(f => f <= 500);
+
+  const location = suppressLocationForConductiveType
+    ? ''
+    : isolatedHighWithLowGap
+      ? 'at high frequency'
+      : p.isolatedFrequencies.length
+        ? `at ${frequencyText(p.isolatedFrequencies)}`
+        : regions[p.frequencyRegion] || (p.frequencyRegion === 'UNKNOWN' ? `at ${frequencyText(p.exactAffectedFrequencies)}` : '');
   let text = `${range} ${shape}${terminology[p.type]}${location ? ` ${location}` : ''}`;
   if (p.configuration === 'RISING' && ['LOW_FREQUENCY', 'LOW_TO_MID'].includes(p.frequencyRegion) && p.points.filter(point => point.frequency >= 4000 && point.ac !== null).every(point => !p.exactAffectedFrequencies.includes(point.frequency))) text += ' rising to normal hearing';
   const modifiers: string[] = [];
   if (p.airBoneGapFrequencies.length && (p.residualAirBoneGap || !['CHL', 'MIXED'].includes(p.type))) {
-    modifiers.push(`an air-bone gap at ${p.airBoneGapFrequencies.every(f => f <= 500) ? 'low frequencies' : frequencyText(p.airBoneGapFrequencies)}`);
+    modifiers.push(`gap at ${p.airBoneGapFrequencies.every(f => f <= 500) ? 'low frequency' : frequencyText(p.airBoneGapFrequencies)}`);
   }
   if (p.notchFrequency !== null && !p.isolatedFrequencies.length) modifiers.push(`a notch at ${p.notchFrequency / 1000} kHz`);
   if (modifiers.length) text += ` with ${modifiers.join(' and ')}`;
   if (p.type === 'UNKNOWN') text += '; type cannot be determined from available thresholds';
-  if (p.warnings.includes('NO_RESPONSE_PRESENT')) text += '; no-response measurements require review';
+  if (p.warnings.includes('NO_RESPONSE_PRESENT') && p.type === 'UNKNOWN') text += '; no-response measurements require review';
   else if (p.warnings.includes('REVIEW_REQUIRED') && p.type !== 'UNKNOWN') text += '; review required';
   return `${text}.`;
 }
