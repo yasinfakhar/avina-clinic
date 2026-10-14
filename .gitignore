@@ -49,3 +49,7 @@ next-env.d.ts
 /.certificates/
 
 !.env.license.example
+/legacy/node_modules/
+/legacy/stage/
+/release-win7/
+/dotnet48-transfer.iso
