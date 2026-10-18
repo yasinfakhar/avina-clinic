@@ -51,6 +51,7 @@ test("creates, binds, recovers, resets, and revokes a license", async () => {
 
 test("publishes semantic versions and exposes the public update catalog", async () => {
   await waitForServer();
+  assert.equal((await api("/avina/latest")).response.status, 404);
   for (const [name, chunks] of [["latest.yml", ["version: 1.1.0"]], ["Avina-Audiology-Setup-1.1.0.exe", ["fake ", "installer"]]]) {
     let offset = 0; const total = chunks.join("").length;
     for (const contents of chunks) {
@@ -67,6 +68,19 @@ test("publishes semantic versions and exposes the public update catalog", async 
   assert.equal(catalog.response.status, 200);
   assert.equal(catalog.body.latest.version, "1.1.0");
   assert.match(catalog.body.latest.url, /Avina-Audiology-Setup-1\.1\.0\.exe$/);
+  for (const route of ["/avina/latest", "/avina/latest/"]) {
+    const download = await fetch(`http://127.0.0.1:${port}${route}`);
+    assert.equal(download.status, 200);
+    assert.equal(download.headers.get("content-disposition"), 'attachment; filename="Avina-Audiology-Setup-1.1.0.exe"');
+    assert.equal(download.headers.get("cache-control"), "no-store");
+    assert.equal(await download.text(), "fake installer");
+  }
+  const uploaded = await api("/admin/update-files/Avina-Audiology-Setup-1.2.0.exe", { method: "PUT", headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/octet-stream" }, body: "new installer" });
+  assert.equal(uploaded.response.status, 201);
+  assert.equal((await api("/admin/releases", { method: "POST", headers: adminHeaders, body: JSON.stringify({ version: "1.2.0", changelog: "new" }) })).response.status, 201);
+  const newest = await fetch(`http://127.0.0.1:${port}/avina/latest`);
+  assert.equal(newest.status, 200);
+  assert.equal(await newest.text(), "new installer");
 });
 
 test("trial is persistent, uses server time, expires, and permits paid upgrade", async () => {

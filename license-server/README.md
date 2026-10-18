@@ -98,7 +98,7 @@ Never run `docker compose down -v` unless you intentionally want to delete all l
 
 ## Updates and admin panel
 
-Open `https://licence.sayahub.ir/admin` and sign in with `LICENSE_ADMIN_TOKEN`. The panel manages clients, licences, recovery/device resets, and release metadata. The public catalog is available at `GET /avina/update`, and electron-updater files are served from `/avina/update/windows/`.
+Open `https://licence.sayahub.ir/admin` and sign in with `LICENSE_ADMIN_TOKEN`. The panel manages clients, licences, recovery/device resets, and release metadata. The public catalog is available at `GET /avina/update`, and electron-updater files are served from `/avina/update/windows/`. The permanent download URL `https://licence.sayahub.ir/avina/latest` serves the latest published Windows installer as an attachment without caching; it returns 404 if no release is published or its installer is missing.
 
 Build a signed Windows release from the repository (the version must already match `package.json`):
 
