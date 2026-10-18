@@ -4,6 +4,7 @@ import React, {
   startTransition,
   useEffect,
   useEffectEvent,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -59,6 +60,10 @@ function HeaderClock() {
   );
 }
 type TympanometryPoint = { pressure: number; compliance: number };
+const tympanometryMeasurement = (
+  value: Tympanometry | undefined,
+  field: "staticCompliance" | "middleEarPressure" | "gradient",
+) => value?.type === "B" ? "—" : value?.[field] || "";
 type ReflexValues = { hz500: string; hz1k: string; hz2k: string; hz4k: string };
 type Tympanometry = {
   canalVolume: string;
@@ -1863,6 +1868,7 @@ function Wizard({
   const [annotatingSide, setAnnotatingSide] = useState<"right" | "left" | null>(
     null,
   );
+  const [audiometryCopyScope, setAudiometryCopyScope] = useState<"all" | "ac" | "bc">("all");
   const audiometricTests = normalizeAudiometricTests(record.audiometricTests);
   const update = (key: keyof RecordItem, value: string) =>
     setRecord((current) => ({ ...current, [key]: value }));
@@ -1905,6 +1911,9 @@ function Wizard({
         ...emptyTympanometry(),
         ...record[side].tympanometry,
         ...patch,
+        ...((patch.type ?? record[side].tympanometry?.type) === "B"
+          ? { staticCompliance: "", middleEarPressure: "", gradient: "", points: [] }
+          : {}),
       },
     });
   const updateAudiometry = (side: "right" | "left", value: Audiometry) =>
@@ -1953,9 +1962,19 @@ function Wizard({
     updateEar(side, { speechAudiometry: next });
   };
   const copyAudiometryTo = (from: "right" | "left", to: "right" | "left") => {
-    updateEar(to, { audiometry: copyAudiometry(record[from].audiometry) });
+    const source = copyAudiometry(record[from].audiometry);
+    const destination = record[to].audiometry;
+    updateEar(to, {
+      audiometry: audiometryCopyScope === "all"
+        ? source
+        : {
+            ac: { ...emptyAudiometryRow(), ...destination?.ac },
+            bc: { ...emptyAudiometryRow(), ...destination?.bc },
+            [audiometryCopyScope]: source[audiometryCopyScope],
+          },
+    });
     notify(
-      `اطلاعات ادیومتری گوش ${from === "right" ? "راست" : "چپ"} به گوش ${to === "right" ? "راست" : "چپ"} کپی شد`,
+      `${audiometryCopyScope === "all" ? "اطلاعات ادیومتری" : audiometryCopyScope.toUpperCase()} گوش ${from === "right" ? "راست" : "چپ"} به گوش ${to === "right" ? "راست" : "چپ"} کپی شد`,
     );
   };
   const canNext =
@@ -2265,8 +2284,26 @@ function Wizard({
                   <h2>اطلاعات Tympanometry</h2>
                 </div>
               </div>
-              <div className="tympanometry-grid">
-                {(["left", "right"] as const).map((side) => {
+              <div
+                className="tympanometry-grid"
+                onKeyDown={(event) => {
+                  if (event.key !== "Tab") return;
+                  const fields = (side: "right" | "left") =>
+                    Array.from(event.currentTarget.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+                      `.tymp-card.${side} .tymp-fields input:not(:disabled), .tymp-card.${side} .tymp-fields select:not(:disabled), .tymp-card.${side} .reflex-table input:not(:disabled)`,
+                    ));
+                  const orderedFields = [...fields("right"), ...fields("left")];
+                  const currentIndex = orderedFields.indexOf(event.target as HTMLInputElement | HTMLSelectElement);
+                  const target = currentIndex >= 0
+                    ? orderedFields[currentIndex + (event.shiftKey ? -1 : 1)]
+                    : undefined;
+                  if (target) {
+                    event.preventDefault();
+                    target.focus();
+                  }
+                }}
+              >
+                {(["right", "left"] as const).map((side) => {
                   const saved = record[side].tympanometry;
                   return (
                     <TympanometryCard
@@ -2332,6 +2369,17 @@ function Wizard({
                   );
                 })}
                 <div className="audiometry-copy-controls">
+                  <select
+                    value={audiometryCopyScope}
+                    onChange={(event) => setAudiometryCopyScope(event.target.value as "all" | "ac" | "bc")}
+                    aria-label="انتخاب اطلاعات ادیومتری برای کپی"
+                    title="اطلاعات قابل کپی"
+                    dir="rtl"
+                  >
+                    <option value="all">همه</option>
+                    <option value="ac">فقط AC</option>
+                    <option value="bc">فقط BC</option>
+                  </select>
                   <button
                     type="button"
                     onClick={() => copyAudiometryTo("left", "right")}
@@ -2365,6 +2413,14 @@ function Wizard({
                     ),
                   }}
                   onChange={updateSpeechAudiometry}
+                  onSetCnt={() => {
+                    const cnt = (): SpeechAudiometry => ({ srt: "CNT", mcl: "CNT", ucl: "CNT", srtNoise: "CNT", mclNoise: "CNT", uclNoise: "CNT" });
+                    setRecord((current) => ({
+                      ...current,
+                      right: { ...current.right, speechAudiometry: cnt() },
+                      left: { ...current.left, speechAudiometry: cnt() },
+                    }));
+                  }}
                 />
                 <div className="audiometry-comment">
                   <CombinedDoctorComment
@@ -2372,6 +2428,8 @@ function Wizard({
                       <AudiometrySuggestion
                         right={record.right.audiometry}
                         left={record.left.audiometry}
+                        rightSpeech={record.right.speechAudiometry}
+                        leftSpeech={record.left.speechAudiometry}
                         onApply={(text) => setRecord({
                           ...record,
                           audiometricTests: {
@@ -2475,11 +2533,11 @@ function Wizard({
                         <strong>گوش {side === "right" ? "راست" : "چپ"}</strong>
                         <span>TYPE: {t?.type || "—"}</span>
                         <span>CANAL VOL: {t?.canalVolume || "—"} cc</span>
-                        <span>STAT.COMP: {t?.staticCompliance || "—"} ml</span>
+                        <span>STAT.COMP: {tympanometryMeasurement(t, "staticCompliance") || "—"} ml</span>
                         <span>
-                          M.E.PRESS: {t?.middleEarPressure || "—"} daPa
+                          M.E.PRESS: {tympanometryMeasurement(t, "middleEarPressure") || "—"} daPa
                         </span>
-                        <span>Gradient: {t?.gradient || "—"} %</span>
+                        <span>Gradient: {tympanometryMeasurement(t, "gradient") || "—"} %</span>
                       </article>
                     );
                   })}
@@ -2724,7 +2782,7 @@ function PrintSpeechAudiometryTable({ value }: { value: SpeechAudiometry }) {
           <th>Condition</th>
           <th>SRT <small>dB HL</small></th>
           <th>MCL <small>dB HL</small></th>
-          <th>UCL</th>
+          <th>SDS</th>
         </tr>
       </thead>
       <tbody>
@@ -2979,6 +3037,7 @@ function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; he
                   contra: { ...emptyReflex(), ...saved?.contra },
                 };
                 const showChart =
+                  value.type === "B" ||
                   value.points.length > 0 ||
                   (hasText(value.middleEarPressure) &&
                     hasText(value.staticCompliance));
@@ -2990,14 +3049,14 @@ function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; he
                     <div className="print-tymp-fields">
                       <ReportFields
                         fields={[
-                          ["Stat. Comp.", value.staticCompliance, "ml"],
+                          ["Stat. Comp.", tympanometryMeasurement(value, "staticCompliance"), "ml"],
                           [
                             "M.E. Press.",
-                            value.middleEarPressure,
+                            tympanometryMeasurement(value, "middleEarPressure"),
                             "daPa",
                           ],
                           ["Canal Vol.", value.canalVolume, "cc"],
-                          ["Gradient", value.gradient, "%"],
+                          ["Gradient", tympanometryMeasurement(value, "gradient"), "%"],
                           ["Type", value.type],
                         ]}
                       />
@@ -3212,19 +3271,19 @@ function RecordSummary({ record }: { record: RecordItem }) {
                   <div>
                     <dt>Stat. Comp.</dt>
                     <dd>
-                      {valueOrDash(tymp.staticCompliance)} <small>ml</small>
+                      {valueOrDash(tympanometryMeasurement(tymp, "staticCompliance"))} <small>ml</small>
                     </dd>
                   </div>
                   <div>
                     <dt>M.E. Press.</dt>
                     <dd>
-                      {valueOrDash(tymp.middleEarPressure)} <small>daPa</small>
+                      {valueOrDash(tympanometryMeasurement(tymp, "middleEarPressure"))} <small>daPa</small>
                     </dd>
                   </div>
                   <div>
                     <dt>Gradient</dt>
                     <dd>
-                      {valueOrDash(tymp.gradient)} <small>%</small>
+                      {valueOrDash(tympanometryMeasurement(tymp, "gradient"))} <small>%</small>
                     </dd>
                   </div>
                 </dl>
@@ -3357,10 +3416,10 @@ function RecordSummary({ record }: { record: RecordItem }) {
                     [
                       ["SRT (In Quiet)", speech.srt, "dB HL"],
                       ["MCL (In Quiet)", speech.mcl, "dB HL"],
-                      ["UCL (In Quiet)", speech.ucl, "%"],
+                      ["SDS (In Quiet)", speech.ucl, "%"],
                       ["SRT (In Noise)", speech.srtNoise, "dB HL"],
                       ["MCL (In Noise)", speech.mclNoise, "dB HL"],
-                      ["UCL (In Noise)", speech.uclNoise, "%"],
+                      ["SDS (In Noise)", speech.uclNoise, "%"],
                     ] as const
                   ).map(([label, value, unit]) => (
                     <div key={label}>
@@ -3448,7 +3507,7 @@ function AudiometrySummaryChart({
   print?: boolean;
 }) {
   const plot = { left: 85, right: 790, top: 34, bottom: 424 };
-  const verticalScale = print ? 2.5 : 1;
+  const verticalScale = print ? 1.8 : 1;
   const yTicks = Array.from({ length: 14 }, (_, index) => -10 + index * 10);
   const x = (index: number) =>
     plot.left +
@@ -3492,7 +3551,7 @@ function AudiometrySummaryChart({
   return (
     <div className={`audiogram summary-audiogram ${side}`} dir="ltr">
       <svg
-        viewBox={`0 0 910 ${465 * verticalScale}`}
+        viewBox={`${print ? -20 : 0} 0 ${print ? 875 : 910} ${465 * verticalScale}`}
         role="img"
         aria-label={`نمودار ادیومتری گوش ${side === "right" ? "راست" : "چپ"}`}
       >
@@ -3572,6 +3631,7 @@ function TympanometrySummaryChart({
   side: "right" | "left";
   value: Tympanometry;
 }) {
+  const clipId = useId();
   const xTicks = Array.from({ length: 10 }, (_, i) => -600 + i * 100),
     yTicks = Array.from({ length: 8 }, (_, i) => 3.5 - i * 0.5);
   const plot = { left: 54, right: 574, top: 18, bottom: 248 };
@@ -3600,7 +3660,7 @@ function TympanometrySummaryChart({
       peakPressure >= -600 &&
       peakPressure <= 300 &&
       peakCompliance >= 0 &&
-      peakCompliance <= 3.5;
+      Number.isFinite(peakCompliance);
   const automaticPoints = hasPeak
     ? Array.from({ length: 51 }, (_, i) => {
         const offset = -300 + i * 10,
@@ -3614,7 +3674,9 @@ function TympanometrySummaryChart({
         };
       }).filter((point) => point.pressure >= -600 && point.pressure <= 300)
     : [];
-  const chartPoints = value.points.length > 1 ? value.points : automaticPoints;
+  const chartPoints = value.type === "B"
+    ? [{ pressure: -300, compliance: 0 }, { pressure: 200, compliance: 0 }]
+    : value.points.length > 1 ? value.points : automaticPoints;
   return (
     <div className="tymp-chart summary-tymp-chart" dir="ltr">
       <svg
@@ -3622,6 +3684,11 @@ function TympanometrySummaryChart({
         role="img"
         aria-label={`نمودار تمپانومتری گوش ${side === "right" ? "راست" : "چپ"}`}
       >
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={plot.left} y={plot.top} width={plot.right - plot.left} height={plot.bottom - plot.top} />
+          </clipPath>
+        </defs>
         <rect
           className="tympanometry-grid-border"
           x={plot.left}
@@ -3670,10 +3737,11 @@ function TympanometrySummaryChart({
         <text className="axis-label" x="580" y="283">
           daPa
         </text>
+        <g clipPath={`url(#${clipId})`}>
         {chartPoints.length > 1 && (
           <path className="drawn-curve" d={smoothPath(chartPoints)} />
         )}{" "}
-        {value.points.length < 2 && hasPeak && (
+        {value.type !== "B" && value.points.length < 2 && hasPeak && (
           <g className="peak-marker">
             <line
               x1={x(peakPressure)}
@@ -3690,6 +3758,7 @@ function TympanometrySummaryChart({
             <circle cx={x(peakPressure)} cy={y(peakCompliance)} r="7" />
           </g>
         )}
+        </g>
       </svg>
     </div>
   );
@@ -3704,6 +3773,8 @@ function TympanometryCard({
   value: Tympanometry;
   onChange: (patch: Partial<Tympanometry>) => void;
 }) {
+  const clipId = useId();
+  const isTypeB = value.type === "B";
   const [drawMode, setDrawMode] = useState<"automatic" | "pencil">("automatic"),
     drawing = useRef(false),
     pointsRef = useRef(value.points);
@@ -3746,7 +3817,7 @@ function TympanometryCard({
     onChange({ points: pointsRef.current });
   };
   const pointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (drawMode !== "pencil") return;
+    if (isTypeB || drawMode !== "pencil") return;
     event.preventDefault();
     const point = eventPoint(event);
     if (!point) return;
@@ -3755,7 +3826,7 @@ function TympanometryCard({
     appendPoint(point);
   };
   const pointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (drawMode !== "pencil" || !drawing.current) return;
+    if (isTypeB || drawMode !== "pencil" || !drawing.current) return;
     event.preventDefault();
     const point = eventPoint(event);
     if (point) appendPoint(point);
@@ -3781,7 +3852,7 @@ function TympanometryCard({
       peakPressure >= -600 &&
       peakPressure <= 300 &&
       peakCompliance >= 0 &&
-      peakCompliance <= 3.5;
+      Number.isFinite(peakCompliance);
   const updateReflex = (
     row: "ipsi" | "contra",
     frequency: keyof ReflexValues,
@@ -3820,6 +3891,7 @@ function TympanometryCard({
             type="button"
             className={drawMode === "pencil" ? "selected" : ""}
             title="رسم دستی با مداد"
+            disabled={isTypeB}
             onClick={() => setDrawMode("pencil")}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3852,6 +3924,11 @@ function TympanometryCard({
           onPointerUp={() => (drawing.current = false)}
           onPointerCancel={() => (drawing.current = false)}
         >
+          <defs>
+            <clipPath id={clipId}>
+              <rect x={plot.left} y={plot.top} width={plot.right - plot.left} height={plot.bottom - plot.top} />
+            </clipPath>
+          </defs>
           {yTicks.map((v) => (
             <g key={v}>
               <line x1={plot.left} x2={plot.right} y1={y(v)} y2={y(v)} />
@@ -3874,16 +3951,20 @@ function TympanometryCard({
           <text className="axis-label" x="580" y="283">
             daPa
           </text>
-          {drawMode === "pencil" && value.points.length > 1 && (
+          <g clipPath={`url(#${clipId})`}>
+          {isTypeB && (
+            <path className="drawn-curve automatic-curve" d={`M ${x(-300)} ${y(0)} L ${x(200)} ${y(0)}`} />
+          )}
+          {!isTypeB && drawMode === "pencil" && value.points.length > 1 && (
             <path className="drawn-curve" d={smoothPath(value.points)} />
           )}{" "}
-          {drawMode === "automatic" && automaticPoints.length > 1 && (
+          {!isTypeB && drawMode === "automatic" && automaticPoints.length > 1 && (
             <path
               className="drawn-curve automatic-curve"
               d={smoothPath(automaticPoints)}
             />
           )}{" "}
-          {drawMode === "automatic" && hasPeak && (
+          {!isTypeB && drawMode === "automatic" && hasPeak && (
             <g className="peak-marker">
               <line
                 x1={x(peakPressure)}
@@ -3903,9 +3984,12 @@ function TympanometryCard({
               </text>
             </g>
           )}
+          </g>
         </svg>
         <small>
-          {drawMode === "pencil"
+          {isTypeB
+            ? "در تایپ B فقط CANAL VOL را وارد کنید؛ سایر مقادیر خط تیره و نمودار خط صاف است."
+            : drawMode === "pencil"
             ? "برای رسم آزاد، مداد را روی نمودار بکشید."
             : hasPeak
               ? "منحنی خودکار در فاصله ۳۰۰ daPa از چپ و ۲۰۰ daPa از راست قله به محور می‌رسد."
@@ -3913,7 +3997,19 @@ function TympanometryCard({
         </small>
       </div>
       <div className="tymp-fields">
-        <label>
+        <label className="tymp-field-compliance">
+          <span>
+            STAT.COMP <em>(ml)</em>
+          </span>
+          <input
+            dir="ltr"
+            inputMode="decimal"
+            value={tympanometryMeasurement(value, "staticCompliance")}
+            disabled={isTypeB}
+            onChange={(e) => onChange({ staticCompliance: e.target.value })}
+          />
+        </label>
+        <label className="tymp-field-canal">
           <span>
             CANAL VOL <em>(cc)</em>
           </span>
@@ -3924,40 +4020,31 @@ function TympanometryCard({
             onChange={(e) => onChange({ canalVolume: e.target.value })}
           />
         </label>
-        <label>
-          <span>
-            STAT.COMP <em>(ml)</em>
-          </span>
-          <input
-            dir="ltr"
-            inputMode="decimal"
-            value={value.staticCompliance}
-            onChange={(e) => onChange({ staticCompliance: e.target.value })}
-          />
-        </label>
-        <label>
+        <label className="tymp-field-pressure">
           <span>
             M.E.PRESS <em>(daPa)</em>
           </span>
           <input
             dir="ltr"
             inputMode="decimal"
-            value={value.middleEarPressure}
+            value={tympanometryMeasurement(value, "middleEarPressure")}
+            disabled={isTypeB}
             onChange={(e) => onChange({ middleEarPressure: e.target.value })}
           />
         </label>
-        <label>
+        <label className="tymp-field-gradient">
           <span>
             Gradient <em>(%)</em>
           </span>
           <input
             dir="ltr"
             inputMode="decimal"
-            value={value.gradient}
+            value={tympanometryMeasurement(value, "gradient")}
+            disabled={isTypeB}
             onChange={(e) => onChange({ gradient: e.target.value })}
           />
         </label>
-        <label>
+        <label className="tymp-field-type">
           <span>TYPE</span>
           <select
             value={value.type}
@@ -3998,25 +4085,6 @@ function TympanometryCard({
           ))}
         </div>
       </div>
-      <fieldset className="doctor-comment">
-        <legend>Comment</legend>
-
-        <label>
-          <span>Dear Dr.</span>
-          <input
-            value={value.dearDoctor}
-            onChange={(e) => onChange({ dearDoctor: e.target.value })}
-          />
-        </label>
-        <label>
-          <span>Tympanometry</span>
-          <textarea
-            rows={4}
-            value={value.comment}
-            onChange={(e) => onChange({ comment: e.target.value })}
-          />
-        </label>
-      </fieldset>
     </article>
   );
 }
@@ -4182,6 +4250,43 @@ function AudiometryCardView({
                 <th>
                   <strong>{row.toUpperCase()}</strong>
                   <small>{row === "ac" ? "Air" : "Bone"}</small>
+                  <select
+                    className="audiometry-row-type"
+                    value={(() => {
+                      const modifiers = audiometryFrequencies
+                        .filter((frequency) => row === "ac" || frequency < 6000)
+                        .map((frequency) => value[row][frequency]?.modifier || "");
+                      return modifiers.every((modifier) => modifier === modifiers[0])
+                        ? modifiers[0]
+                        : "mixed";
+                    })()}
+                    aria-label={`نوع همه فرکانس‌های ${row.toUpperCase()} گوش ${side === "right" ? "راست" : "چپ"}`}
+                    title="Type همه فرکانس‌ها"
+                    onChange={(event) => {
+                      const modifier = event.target.value as AudiometryModifier;
+                      onChange({
+                        ...value,
+                        [row]: Object.fromEntries(
+                          audiometryFrequencies.map((frequency) => [
+                            frequency,
+                            {
+                              ...value[row][frequency],
+                              value: value[row][frequency]?.value || "",
+                              modifier: row === "bc" && frequency >= 6000
+                                ? value[row][frequency]?.modifier || ""
+                                : modifier,
+                            },
+                          ]),
+                        ),
+                      });
+                    }}
+                  >
+                    <option value="mixed" disabled>Type</option>
+                    <option value="">—</option>
+                    <option value="M">M</option>
+                    <option value="NR">NR</option>
+                    {row === "bc" && <option value="MD">MD</option>}
+                  </select>
                 </th>
                 {audiometryFrequencies.map((frequency) => {
                   const cell = value[row][frequency] || {
@@ -4338,8 +4443,10 @@ function weberLabel(value: WeberResult) {
 function SpeechAudiometryPanel({
   values,
   onChange,
+  onSetCnt,
 }: {
   values: Record<"right" | "left", SpeechAudiometry>;
+  onSetCnt: () => void;
   onChange: (
     side: "right" | "left",
     field: SpeechAudiometryField,
@@ -4358,6 +4465,7 @@ function SpeechAudiometryPanel({
       <div className="speech-audiometry-heading">
         <h3>Speech Audiometry</h3>
         <small>MCL = SRT + 30 dB</small>
+        <button type="button" className="secondary" onClick={onSetCnt} title="Set all speech audiometry fields in both ears to CNT">CNT — Both Ears</button>
       </div>
       <div className="speech-audiometry-ears">
         {(["right", "left"] as const).map((side) => (
@@ -4367,15 +4475,15 @@ function SpeechAudiometryPanel({
               <div className="speech-audiometry-condition" key={condition}>
                 <h4>{condition}</h4>
                 {fields.map((field, index) => {
-                  const label = ["SRT", "MCL", "UCL"][index];
+                  const label = ["SRT", "MCL", "SDS"][index];
                   return (
                     <label key={field}>
                       <span>
                         {label}{" "}
-                        <small>{label === "UCL" ? "%" : "dB HL"}</small>
+                        <small>{label === "SDS" ? "%" : "dB HL"}</small>
                       </span>
                       <input
-                        type="number"
+                        type={values[side][field] === "CNT" ? "text" : "number"}
                         step="5"
                         value={values[side][field]}
                         onChange={(event) =>

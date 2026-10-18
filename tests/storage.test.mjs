@@ -27,7 +27,21 @@ test("initializes the SQLite database and backup directories", () => {
 
 test("seeds reusable otoscopy results in persistent storage", () => {
   const rows = getDb().prepare("SELECT value FROM otoscopy_results ORDER BY created_at").all();
-  assert.deepEqual(rows.map((row) => row.value), ["Normal TM", "O4"]);
+  assert.deepEqual(rows.map((row) => row.value), ["Normal TM"]);
+});
+
+test("removes the legacy O4 suggestion once while preserving other results", () => {
+  const database = getDb();
+  database.prepare("DELETE FROM app_migrations WHERE version = 2").run();
+  database.prepare("INSERT INTO otoscopy_results (value, created_at) VALUES (?, ?)").run("O4", 1);
+  database.prepare("INSERT INTO otoscopy_results (value, created_at) VALUES (?, ?)").run("Custom result", 2);
+  closeDb();
+  const migrated = getDb();
+  assert.equal(migrated.prepare("SELECT 1 FROM otoscopy_results WHERE value = 'O4'").get(), undefined);
+  assert.ok(migrated.prepare("SELECT 1 FROM otoscopy_results WHERE value = 'Custom result'").get());
+  migrated.prepare("INSERT INTO otoscopy_results (value, created_at) VALUES (?, ?)").run("O4", 3);
+  closeDb();
+  assert.ok(getDb().prepare("SELECT 1 FROM otoscopy_results WHERE value = 'O4'").get());
 });
 
 test("formats update timestamps using the Persian calendar and Tehran time", () => {

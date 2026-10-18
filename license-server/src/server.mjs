@@ -128,11 +128,11 @@ function contentType(file) {
   if (file.endsWith(".exe")) return "application/vnd.microsoft.portable-executable";
   return "application/octet-stream";
 }
-function serveUpdateFile(response, name) {
+function serveUpdateFile(response, name, downloadLatest = false) {
   if (!/^[A-Za-z0-9._ -]+$/.test(name)) return json(response, 400, { error: "Invalid file name" });
   const file = path.join(updateDirectory, name);
   if (!existsSync(file) || !statSync(file).isFile()) return json(response, 404, { error: "File not found" });
-  response.writeHead(200, { "Content-Type": contentType(file), "Content-Length": statSync(file).size, "Cache-Control": name === "latest.yml" ? "no-cache" : "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff" });
+  response.writeHead(200, { "Content-Type": contentType(file), "Content-Length": statSync(file).size, "Cache-Control": downloadLatest ? "no-store" : name === "latest.yml" ? "no-cache" : "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff", ...(downloadLatest ? { "Content-Disposition": `attachment; filename="${name}"` } : {}) });
   createReadStream(file).pipe(response); return true;
 }
 
@@ -268,6 +268,11 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/v1/public-key") return json(response, 200, { algorithm: "Ed25519", publicKey });
     if (request.method === "GET" && (url.pathname === "/avina/update" || url.pathname === "/avina/update/")) {
       const releases = releaseList(); return json(response, 200, { latest: releases[0] || null, releases });
+    }
+    if (request.method === "GET" && (url.pathname === "/avina/latest" || url.pathname === "/avina/latest/")) {
+      const latest = releaseList()[0];
+      if (!latest) return json(response, 404, { error: "No published release available" });
+      return serveUpdateFile(response, path.basename(latest.url), true);
     }
     if (request.method === "GET" && url.pathname.startsWith("/avina/update/windows/")) return serveUpdateFile(response, decodeURIComponent(url.pathname.slice("/avina/update/windows/".length)));
     if (request.method === "POST" && url.pathname === "/v1/trials/check") return await handleTrialCheck(request, response);
