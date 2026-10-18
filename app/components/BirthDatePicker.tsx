@@ -8,8 +8,9 @@ const PERSIAN_MONTHS = [
   "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
 ];
 const WEEKDAYS = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
+const MIN_YEAR = 1300;
 
-const fa = (n: number) => n.toLocaleString("fa-IR");
+const fa = (n: number) => n.toLocaleString("fa-IR", { useGrouping: false });
 
 type BirthDatePickerProps = {
   value: string;
@@ -57,6 +58,7 @@ export function BirthDatePicker({
       let jy = current.jy;
       while (jm > 12) { jm -= 12; jy += 1; }
       while (jm < 1) { jm += 12; jy -= 1; }
+      if (jy < MIN_YEAR) return current;
       return { jy, jm, jd: 1 };
     });
   };
@@ -101,7 +103,7 @@ export function BirthDatePicker({
           style={compact ? { right: 0, left: "auto", width: 280 } : undefined}
         >
           <div className="birth-datepicker-head">
-            <button type="button" aria-label="ماه قبل" onClick={() => shiftMonth(-1)}>‹</button>
+            <button type="button" aria-label="ماه قبل" disabled={view.jy === MIN_YEAR && view.jm === 1} onClick={() => shiftMonth(-1)}>‹</button>
             <div className="birth-datepicker-selectors">
               <select
                 value={view.jm}
@@ -117,7 +119,7 @@ export function BirthDatePicker({
                 onChange={(e) => setYear(Number(e.target.value))}
                 className="birth-datepicker-year-select"
               >
-                {Array.from({ length: 100 }, (_, i) => todayJalali().jy - 80 + i).map((year) => (
+                {Array.from({ length: todayJalali().jy + 19 - MIN_YEAR + 1 }, (_, i) => MIN_YEAR + i).map((year) => (
                   <option key={year} value={year}>{fa(year)}</option>
                 ))}
               </select>
