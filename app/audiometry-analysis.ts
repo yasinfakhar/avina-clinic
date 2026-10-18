@@ -221,15 +221,14 @@ export function analyzeEar(ear: 'right' | 'left', input?: AudiometryInput, confi
   }
 
   const availableBc = points.filter(p => p.bc !== null);
-  const broadConductiveEvidence = chlEvidence.length + mixedEvidence.length >= config.minimumConductivePoints;
   const highFrequencyReportable = reportAffected.length > 0 && reportAffected.every(p => p.frequency >= 6000);
-  const availableBcSupportsNonConductive = availableBc.length >= Math.min(2, config.minimumBonePoints)
-    && availableBc.every(p => isBcNormal(p.bc) || p.pairPattern === 'SNHL' || p.pairPattern === 'NONE');
+  const hasAcNr = points.some(p => p.acModifier === 'NR');
 
-  // 6/8 kHz often has no direct BC. Infer SNHL if the available BC pattern is
-  // non-conductive and no broad conductive pattern exists.
-  if (type === 'UNKNOWN' && highFrequencyReportable && availableBcSupportsNonConductive && !broadConductiveEvidence) {
+  // Clinic reporting rule: AC NR and loss confined to 6/8 kHz establish SNHL.
+  // Direct BC at 6/8 kHz is not required or collected in this workflow.
+  if (hasAcNr || highFrequencyReportable) {
     type = 'SNHL';
+    typeTransition = null;
   }
 
   // Preserve an already-established SNHL when later BC becomes NR because of
@@ -251,13 +250,13 @@ export function analyzeEar(ear: 'right' | 'left', input?: AudiometryInput, confi
   if (validAc.length < config.minimumNormalPoints) warnings.add('INSUFFICIENT_DATA');
   if (config.requiredNormalFrequencies.some(f => !validAc.some(p => p.frequency === f))) warnings.add('PARTIAL_AC');
 
-  if (!affected.length && validAc.length >= config.minimumNormalPoints && !warnings.has('INVALID_THRESHOLD') && !warnings.has('CONFLICTING_THRESHOLDS')) {
+  if (!hasAcNr && !affected.length && validAc.length >= config.minimumNormalPoints && !warnings.has('INVALID_THRESHOLD') && !warnings.has('CONFLICTING_THRESHOLDS')) {
     type = 'NORMAL';
   }
 
   const status: EarProfile['status'] = deafness
     ? 'HEARING_LOSS'
-    : affected.length ? 'HEARING_LOSS'
+    : affected.length || hasAcNr ? 'HEARING_LOSS'
       : type === 'NORMAL' ? 'NORMAL' : 'UNKNOWN';
 
   // Degree range with recovery suppression. This affects wording only, not type.
@@ -285,7 +284,8 @@ export function analyzeEar(ear: 'right' | 'left', input?: AudiometryInput, confi
 
   const degreeFrom = degreeSource.length
     ? classifyDegree(Math.min(...degreeSource.map(p => p.ac!)), config)
-    : type === 'NORMAL' ? 'NORMAL' : 'UNKNOWN';
+    : type === 'NORMAL' ? 'NORMAL'
+      : nrAcLevels.size ? classifyDegree(Math.min(...nrAcLevels.values()), config) : 'UNKNOWN';
 
   const measuredWorst = degreeSource.length ? Math.max(...degreeSource.map(p => p.ac!)) : null;
   const nrWorst = nrAcLevels.size ? Math.max(...nrAcLevels.values()) : null;

@@ -45,7 +45,7 @@ export function composeEar(p: EarProfile, terminology = audiometryTerminology): 
   if (p.status === 'UNKNOWN') return 'Insufficient thresholds for interpretation; review required.';
   if (p.status === 'NORMAL') return `normal hearing${p.warnings.includes('PARTIAL_AC') ? '; available tested frequencies only' : ''}.`;
 
-  const range = p.degreeFrom === p.degreeTo
+  const range = p.degreeFrom === 'UNKNOWN' && p.degreeTo === 'UNKNOWN' ? '' : p.degreeFrom === p.degreeTo
     ? degree(p.degreeFrom)
     : `${degree(p.degreeFrom)} to ${degree(p.degreeTo)}`;
 
@@ -77,7 +77,7 @@ export function composeEar(p: EarProfile, terminology = audiometryTerminology): 
     else location = regions[p.frequencyRegion] || '';
   }
 
-  let text = `${range} ${shape}${terminology[p.type]}${location ? ` ${location}` : ''}`;
+  let text = `${range ? `${range} ` : ''}${shape}${terminology[p.type]}${location ? ` ${location}` : ''}`;
 
   if (p.configuration === 'RISING'
       && ['LOW_FREQUENCY', 'LOW_TO_MID'].includes(p.frequencyRegion)
