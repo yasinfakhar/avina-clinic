@@ -19,7 +19,7 @@ export function TympanometrySuggestion({
     <div className="audiometry-suggestion">
       <button
         type="button"
-        className="btn secondary"
+        className="btn primary"
         disabled={lines.length === 0}
         onClick={() => onApply(lines.map((line) => {
           const paragraph = document.createElement("p");

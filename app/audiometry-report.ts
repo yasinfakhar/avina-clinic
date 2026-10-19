@@ -15,6 +15,12 @@ export function composeSdsReport(right?: string, left?: string, label = 'SDS'): 
 
   const re = score(right);
   const le = score(left);
+  const rightCnt = right?.trim().toUpperCase() === 'CNT';
+  const leftCnt = left?.trim().toUpperCase() === 'CNT';
+  if (rightCnt && leftCnt) return `${label}: Speech audiometry could not be tested for both ears.`;
+  if (leftCnt && re) return `${label}: Show ${re} score in right ear but speech audiometry could not be tested for left ear.`;
+  if (rightCnt && le) return `${label}: Show ${le} score in left ear but speech audiometry could not be tested for right ear.`;
+  if (rightCnt || leftCnt) return `${label}: Speech audiometry could not be tested for ${rightCnt ? 'right' : 'left'} ear.`;
   if (!re && !le) return '';
   if (re && le && re !== le) return `${label}: Show ${re} score in right ear and ${le} score in left ear.`;
   return `${label}: Show ${re || le} score in ${re && le ? 'both ears' : re ? 'right ear' : 'left ear'}.`;
