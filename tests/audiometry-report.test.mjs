@@ -28,6 +28,15 @@ test('SDS reports single ears and different categories', () => {
   assert.equal(composeSdsReport('', '70', 'SDS (In Noise)'), 'SDS (In Noise): Show high score in left ear.');
 });
 
+test('SDS reports CNT for either ear and both ears', () => {
+  assert.equal(composeSdsReport('69', 'CNT'), 'SDS: Show poor score in right ear but speech audiometry could not be tested for left ear.');
+  assert.equal(composeSdsReport('CNT', '95'), 'SDS: Show high score in left ear but speech audiometry could not be tested for right ear.');
+  assert.equal(composeSdsReport('CNT', 'CNT'), 'SDS: Speech audiometry could not be tested for both ears.');
+  assert.equal(composeSdsReport(' cnt ', ''), 'SDS: Speech audiometry could not be tested for right ear.');
+  assert.equal(composeSdsReport(undefined, 'CNT'), 'SDS: Speech audiometry could not be tested for left ear.');
+  assert.equal(composeSdsReport('70', 'CNT', 'SDS (In Noise)'), 'SDS (In Noise): Show high score in right ear but speech audiometry could not be tested for left ear.');
+});
+
 test('bilateral normal hearing has no flat-loss shape', () => {
   const p = analyzeAudiometry(ear(), ear());
   assert.equal(p.rightEar.type, 'NORMAL'); assert.equal(p.rightEar.configuration, 'NONE');

@@ -1943,6 +1943,8 @@ function Wizard({
     field: SpeechAudiometryField,
     value: string,
   ) => {
+    value = value.toUpperCase();
+    if (!/^-?\d*\.?\d*$/.test(value) && !["C", "CN", "CNT"].includes(value)) return;
     const current = normalizeSpeechAudiometry(record[side].speechAudiometry);
     const next = { ...current, [field]: value };
     if (field === "srt") {
@@ -2413,12 +2415,11 @@ function Wizard({
                     ),
                   }}
                   onChange={updateSpeechAudiometry}
-                  onSetCnt={() => {
+                  onSetCnt={(side) => {
                     const cnt = (): SpeechAudiometry => ({ srt: "CNT", mcl: "CNT", ucl: "CNT", srtNoise: "CNT", mclNoise: "CNT", uclNoise: "CNT" });
                     setRecord((current) => ({
                       ...current,
-                      right: { ...current.right, speechAudiometry: cnt() },
-                      left: { ...current.left, speechAudiometry: cnt() },
+                      [side]: { ...current[side], speechAudiometry: cnt() },
                     }));
                   }}
                 />
@@ -4446,7 +4447,7 @@ function SpeechAudiometryPanel({
   onSetCnt,
 }: {
   values: Record<"right" | "left", SpeechAudiometry>;
-  onSetCnt: () => void;
+  onSetCnt: (side: "right" | "left") => void;
   onChange: (
     side: "right" | "left",
     field: SpeechAudiometryField,
@@ -4465,12 +4466,20 @@ function SpeechAudiometryPanel({
       <div className="speech-audiometry-heading">
         <h3>Speech Audiometry</h3>
         <small>MCL = SRT + 30 dB</small>
-        <button type="button" className="secondary" onClick={onSetCnt} title="Set all speech audiometry fields in both ears to CNT">CNT — Both Ears</button>
       </div>
       <div className="speech-audiometry-ears">
         {(["right", "left"] as const).map((side) => (
           <fieldset className={side} key={side}>
             <legend>{side === "right" ? "Right Ear" : "Left Ear"}</legend>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => onSetCnt(side)}
+              title={`Set all speech audiometry fields in the ${side} ear to CNT`}
+              aria-label={`Set ${side} ear to CNT`}
+            >
+              CNT — {side === "right" ? "Right Ear" : "Left Ear"}
+            </button>
             {conditions.map(({ label: condition, fields }) => (
               <div className="speech-audiometry-condition" key={condition}>
                 <h4>{condition}</h4>
@@ -4483,8 +4492,7 @@ function SpeechAudiometryPanel({
                         <small>{label === "SDS" ? "%" : "dB HL"}</small>
                       </span>
                       <input
-                        type={values[side][field] === "CNT" ? "text" : "number"}
-                        step="5"
+                        type="text"
                         value={values[side][field]}
                         onChange={(event) =>
                           onChange(side, field, event.target.value)
