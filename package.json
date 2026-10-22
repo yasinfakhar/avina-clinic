@@ -10,6 +10,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "release:win7": "node --env-file-if-exists=.env.desktop scripts/release-windows7.mjs",
     "build:win7": "node --env-file-if-exists=.env.desktop scripts/build-windows7.mjs",
     "build:win7:dir": "node --env-file-if-exists=.env.desktop scripts/build-windows7.mjs --dir",
     "install:ci": "bash scripts/install-ci.sh",

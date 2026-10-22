@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, cpSync, writeFileSync, appendFileSync, renameSync, rmSync, statSync, readFileSync } from "node:fs";
 import net from "node:net";
+import { release as osRelease } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -15,6 +16,12 @@ const { autoUpdater } = electronUpdater;
 
 const electronDirectory = path.dirname(fileURLToPath(import.meta.url));
 const applicationRoot = path.resolve(electronDirectory, "..");
+// Windows 7 graphics drivers can fail during Chromium compositing (for
+// example when the reminder banner animates). Apply before app readiness.
+const windowsVersion = osRelease().split(".").map(Number);
+const legacyWindowsGraphics = process.platform === "win32" &&
+  (windowsVersion[0] < 6 || (windowsVersion[0] === 6 && windowsVersion[1] <= 1));
+if (legacyWindowsGraphics) app.disableHardwareAcceleration();
 if (!app.requestSingleInstanceLock()) app.exit(0);
 const dataDirectory = path.join(app.getPath("userData"), "data");
 const backupStore = createBackupStore(app.getPath("userData"));
@@ -38,6 +45,10 @@ function log(message, error) {
   try { appendFileSync(startupLog, `${new Date().toISOString()} ${message}${detail ? `\n${detail}` : ""}\n`); } catch {}
 }
 log(`Starting ${app.getName()} ${app.getVersion()} (${process.platform}-${process.arch}, packaged=${app.isPackaged})`);
+log(`Graphics compatibility: softwareRendering=${legacyWindowsGraphics}, OS=${osRelease()}, Electron=${process.versions.electron}`);
+app.on("child-process-gone", (_event, details) => {
+  log("Electron child process exited", JSON.stringify(details));
+});
 const licenseFile = path.join(dataDirectory, "license.json");
 const releaseConfigPath = path.join(electronDirectory, "release-config.json");
 const releaseConfig = existsSync(releaseConfigPath) ? JSON.parse(readFileSync(releaseConfigPath, "utf8")) : {};
@@ -377,6 +388,7 @@ dataHandler("invoice:save-pdf", async (event, recordId, invoice, action = "open"
     const pdf = await hidden.webContents.printToPDF({
       printBackground: true,
       pageSize: "A5",
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
       preferCSSPageSize: true,
     });
     const directory = path.join(dataDirectory, "factors");

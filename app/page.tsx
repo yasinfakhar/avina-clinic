@@ -2974,14 +2974,6 @@ function PrintReport({ record, headerUrl, themeColor }: { record: RecordItem; he
                           className="print-otoscopy-image"
                           src={record[side].imageDataUrl}
                           alt={`تصویر اتوسکوپی گوش ${side === "right" ? "راست" : "چپ"}`}
-                          style={{
-                            gridArea: "1 / 1",
-                            alignSelf: "center",
-                            justifySelf: "center",
-                            width: "auto",
-                            height: "58mm",
-                            maxWidth: "none",
-                          }}
                         />
                         <span
                           className="print-otoscopy-ear-badge"
